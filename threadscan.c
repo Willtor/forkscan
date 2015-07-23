@@ -29,6 +29,7 @@ THE SOFTWARE.
 #include <malloc.h>
 #include "proc.h"
 #include <pthread.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -81,6 +82,9 @@ static volatile int g_received_signal;
 static volatile size_t g_cleanup_counter;
 
 static gc_data_t *g_gc_data, *g_uncollected_data;
+
+static __thread int g_in_malloc = 0;
+static __thread int g_waiting_to_fork = 0;
 
 /****************************************************************************/
 /*                            Pointer tracking.                             */
@@ -269,18 +273,48 @@ void *threadscan_gc_thread (void *ignored)
 /*                            Bystander threads.                            */
 /****************************************************************************/
 
+static void wait_for_fork ()
+{
+    size_t old_counter;
+    jmp_buf env; // Spilled registers.
+
+    // Acknowledge the signal and wait for the snapshot to complete.
+    old_counter = g_cleanup_counter;
+    setjmp(env);
+    __sync_fetch_and_add(&g_received_signal, 1);
+    while (old_counter == g_cleanup_counter) pthread_yield();
+}
+
+__attribute__((visibility("default")))
+void *automalloc (size_t size)
+{
+    void *p;
+    g_in_malloc = 1;
+    p = malloc(size);
+    g_in_malloc = 0;
+
+    if (g_waiting_to_fork) {
+        // Sadly, TC-Malloc has a deadlock bug when interacting with fork().
+        // We need to make sure it isn't holding the global lock when we
+        // initiate cleanup.
+        wait_for_fork();
+        g_waiting_to_fork = 0;
+    }
+
+    return p;
+}
+
 /**
  * Got a signal from a thread wanting to do cleanup.
  */
 static void signal_handler (int sig)
 {
-    size_t old_counter;
     assert(SIGTHREADSCAN == sig);
-
-    // Acknowledge the signal and wait for the snapshot to complete.
-    old_counter = g_cleanup_counter;
-    __sync_fetch_and_add(&g_received_signal, 1);
-    while (old_counter == g_cleanup_counter) pthread_yield();
+    if (g_in_malloc) {
+        g_waiting_to_fork = 1;
+        return;
+    }
+    wait_for_fork();
 }
 
 /**
