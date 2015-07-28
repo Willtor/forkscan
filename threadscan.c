@@ -83,7 +83,7 @@ static volatile size_t g_cleanup_counter;
 
 static gc_data_t *g_gc_data, *g_uncollected_data;
 
-static __thread int g_in_malloc = 0;
+static volatile __thread int g_in_malloc = 0;
 static __thread int g_waiting_to_fork = 0;
 
 /****************************************************************************/
@@ -105,6 +105,7 @@ static void generate_working_pointers_list (gc_data_t *gc_data)
     ENDFOREACH_IN_THREAD_LIST(td, thread_list);
 
     gc_data->n_addrs = n;
+    assert(!threadscan_queue_is_full(&threadscan_thread_get_td()->ptr_list));
 }
 
 /****************************************************************************/
@@ -199,7 +200,9 @@ static void garbage_collect (gc_data_t *gc_data)
 
         // Include the addrs from the last collection iteration.
         if (g_uncollected_data) {
-            g_uncollected_data->next = gc_data;
+            gc_data_t *tmp = g_uncollected_data;
+            while (tmp->next) tmp = tmp->next;
+            tmp->next = gc_data;
             gc_data = g_uncollected_data;
         }
         threadscan_child(gc_data, pipefd[PIPE_WRITE]);
@@ -217,10 +220,7 @@ static void garbage_collect (gc_data_t *gc_data)
     close(pipefd[PIPE_WRITE]);
 
     gc_data->n_addrs = 0;
-    if (g_uncollected_data) {
-        threadscan_alloc_munmap(g_uncollected_data); // FIXME: munmap is slow!
-    }
-
+    g_uncollected_data = NULL;
     while (read_from_child(pipefd[PIPE_READ], (void*)&addr)) {
         if (0 == addr) {
             // Switch from free'ing pointers to saving them for the next round.
@@ -230,15 +230,35 @@ static void garbage_collect (gc_data_t *gc_data)
                 void *p = (void*)addr;
                 memset(p, 0, malloc_usable_size(p));
                 free(p);
-            } else gc_data->addrs[gc_data->n_addrs++] = addr;
+            } else {
+                if (g_uncollected_data == NULL) g_uncollected_data = gc_data;
+                if (gc_data->n_addrs >= g_tsdata.max_ptrs) {
+                    gc_data = gc_data->next;
+                    assert(gc_data != NULL);
+                    gc_data->n_addrs = 0;
+                }
+                gc_data->addrs[gc_data->n_addrs++] = addr;
+            }
         }
     }
 
     close(pipefd[PIPE_READ]);
 
-    // Save the old addresses.
-    g_uncollected_data = gc_data;
-    //threadscan_diagnostic("%d remaining.\n", gc_data->n_addrs);
+    // Free up unnecessary space.
+    assert(gc_data);
+    gc_data_t *tmp;
+    if (gc_data->n_addrs) {
+        tmp = gc_data;
+        gc_data = gc_data->next;
+        tmp->next = NULL;
+    } else {
+        assert(NULL == g_uncollected_data);
+    }
+    while (gc_data) {
+        tmp = gc_data->next;
+        threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
+        gc_data = tmp;
+    }
 }
 
 /**
@@ -262,6 +282,13 @@ void *threadscan_gc_thread (void *ignored)
         gc_data = g_gc_data;
         g_gc_data = NULL;
         pthread_mutex_unlock(&g_gc_mutex);
+
+#ifndef NDEBUG
+        int n = 1;
+        gc_data_t *tmp = gc_data;
+        while (NULL != (tmp = tmp->next)) ++n;
+        threadscan_diagnostic("%d collects waiting.\n", n);
+#endif
 
         garbage_collect(gc_data);
     }
@@ -301,6 +328,7 @@ void *automalloc (size_t size)
         g_waiting_to_fork = 0;
     }
 
+    threadscan_collect(p);
     return p;
 }
 

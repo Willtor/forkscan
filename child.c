@@ -31,6 +31,8 @@ THE SOFTWARE.
 #include <unistd.h>
 #include "util.h"
 
+//#define DEEP_REFERENCES 1
+
 /****************************************************************************/
 /*                                  Macros                                  */
 /****************************************************************************/
@@ -59,6 +61,17 @@ static void __assert_monotonicity (size_t *a, int n, const char *f, int line)
 #endif
 
 #define BINARY_THRESHOLD 32
+
+static int is_ref (gc_data_t *gc_data, int loc, size_t cmp)
+{
+#ifdef DEEP_REFERENCES
+    return gc_data->addrs[loc] == cmp
+        || (gc_data->addrs[loc] < cmp
+            && gc_data->addrs[loc] + gc_data->alloc_sz[loc] > cmp);
+#else
+    return gc_data->addrs[loc] == cmp;
+#endif
+}
 
 /****************************************************************************/
 /*                            Search utilities.                             */
@@ -116,8 +129,7 @@ static void do_search (size_t *mem, size_t range_size, gc_data_t *gc_data)
                                 v == gc_data->n_minimap - 1
                                 ? gc_data->n_addrs
                                 : (v + 1) * (PAGESIZE / sizeof(size_t)));
-        size_t addr = gc_data->addrs[loc];
-        if (cmp >= addr && cmp < addr + gc_data->alloc_sz[loc]) {
+        if (is_ref(gc_data, loc, cmp)) {
             // It's a pointer somewhere into the allocated region of memory.
             ++gc_data->refs[loc];
         }
@@ -368,9 +380,9 @@ static int once_over (gc_data_t *gc_data, int fd)
                                             gc_data->n_addrs);
                     }
 
-                    if (gc_data->addrs[loc] == p
-                        || gc_data->addrs[loc] + gc_data->alloc_sz[loc] > p) {
+                    if (is_ref(gc_data, loc, p)) {
                         --gc_data->refs[loc];
+                        assert(gc_data->refs[loc] >= 0);
                     }
                 }
             }
@@ -429,4 +441,5 @@ void threadscan_child (gc_data_t *gc_data_list, int fd)
     for (i = 0; i < gc_data->n_addrs; ++i) {
         report_to_parent(fd, gc_data->addrs[i]);
     }
+    //threadscan_diagnostic("Still have %d addrs.\n", (int)gc_data->n_addrs);
 }
