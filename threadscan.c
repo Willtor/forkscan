@@ -184,6 +184,14 @@ static void garbage_collect (gc_data_t *gc_data)
         threadscan_fatal("Collection failed (pipe2).\n");
     }
 
+    // Include the addrs from the last collection iteration.
+    if (g_uncollected_data) {
+        gc_data_t *tmp = g_uncollected_data;
+        while (tmp->next) tmp = tmp->next;
+        tmp->next = gc_data;
+        gc_data = g_uncollected_data;
+    }
+
     // Send out signals.  When everybody is waiting at the line, fork the
     // process for the snapshot.
     g_received_signal = 0;
@@ -198,13 +206,6 @@ static void garbage_collect (gc_data_t *gc_data)
         // remaining pointers back, and exit.
         close(pipefd[PIPE_READ]);
 
-        // Include the addrs from the last collection iteration.
-        if (g_uncollected_data) {
-            gc_data_t *tmp = g_uncollected_data;
-            while (tmp->next) tmp = tmp->next;
-            tmp->next = gc_data;
-            gc_data = g_uncollected_data;
-        }
         threadscan_child(gc_data, pipefd[PIPE_WRITE]);
 
         close(pipefd[PIPE_WRITE]);
