@@ -96,19 +96,24 @@ static int read_mapline (FILE *fp, mapline_t *m)
     m->path[0] = '\0';
 
     if (n != 7) {
+        if (n == -1) {
+            // EOF.  Don't know why this happens, sometimes...
+            return 0;
+        }
         threadscan_fatal("threadscan internal error: "
-                         "fscanf returned %d\n", n);
+                         "fscanf returned %d (expected 7)\n", n);
     } else {
         char c;
         while (' ' == (c = fgetc(fp)));
         if (c != '\n' && c != EOF) {
             m->path[0] = c;
-            n = fscanf(fp, "%s\n", &m->path[1]); // FIXME: not safe.
+            n = fscanf(fp, "%s", &m->path[1]); // FIXME: not safe.
             if (n != 1) {
                 threadscan_fatal("threadscan internal error: "
-                                 "fscanf returned %d\n",
+                                 "fscanf returned %d (expected 1)\n",
                                  n);
             }
+            while ('\n' != (c = fgetc(fp)));
         }
     }
 

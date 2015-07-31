@@ -165,24 +165,18 @@ void threadscan_collect (void *ptr)
     }
 }
 
-static int read_from_child (int fd, void *buffer)
+static size_t read_from_child (queue_t *commq)
 {
-    int ret = read(fd, buffer, sizeof(size_t));
-    if (! (ret == 0 || ret == sizeof(size_t))) {
-        threadscan_fatal("Error reading from file descriptor.\n");
+    while (threadscan_queue_is_empty(commq)) {
+        pthread_yield();
     }
-    return ret;
+    return threadscan_queue_pop(commq);
 }
 
-static void garbage_collect (gc_data_t *gc_data)
+static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 {
-    int pipefd[2];
     int sig_count;
     pid_t pid;
-
-    if (0 != pipe2(pipefd, 0)) {
-        threadscan_fatal("Collection failed (pipe2).\n");
-    }
 
     // Include the addrs from the last collection iteration.
     if (g_uncollected_data) {
@@ -204,46 +198,34 @@ static void garbage_collect (gc_data_t *gc_data)
     } else if (pid == 0) {
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
-        close(pipefd[PIPE_READ]);
-
-        threadscan_child(gc_data, pipefd[PIPE_WRITE]);
-
-        close(pipefd[PIPE_WRITE]);
+        threadscan_child(gc_data, commq);
         exit(0);
     }
 
     // Parent: Listen to the child process.  It will report pointers to free
     // followed by pointers that could not be collected.
     size_t addr;
-    enum { FREEING, STORING } mode = FREEING;
 
     ++g_cleanup_counter;
-    close(pipefd[PIPE_WRITE]);
 
     gc_data->n_addrs = 0;
     g_uncollected_data = NULL;
-    while (read_from_child(pipefd[PIPE_READ], (void*)&addr)) {
-        if (0 == addr) {
-            // Switch from free'ing pointers to saving them for the next round.
-            mode = STORING;
-        } else {
-            if (mode == FREEING) {
-                void *p = (void*)addr;
-                memset(p, 0, malloc_usable_size(p));
-                free(p);
-            } else {
-                if (g_uncollected_data == NULL) g_uncollected_data = gc_data;
-                if (gc_data->n_addrs >= g_tsdata.max_ptrs) {
-                    gc_data = gc_data->next;
-                    assert(gc_data != NULL);
-                    gc_data->n_addrs = 0;
-                }
-                gc_data->addrs[gc_data->n_addrs++] = addr;
-            }
-        }
+    // Collect nodes to free.
+    while (0 != (addr = read_from_child(commq))) {
+        void *p = (void*)addr;
+        memset(p, 0, malloc_usable_size(p));
+        free(p);
     }
-
-    close(pipefd[PIPE_READ]);
+    // Collect nodes that could not be free'd.
+    while (0 != (addr = read_from_child(commq))) {
+        if (g_uncollected_data == NULL) g_uncollected_data = gc_data;
+        if (gc_data->n_addrs >= g_tsdata.max_ptrs) {
+            gc_data = gc_data->next;
+            assert(gc_data != NULL);
+            gc_data->n_addrs = 0;
+        }
+        gc_data->addrs[gc_data->n_addrs++] = addr;
+    }
 
     // Free up unnecessary space.
     assert(gc_data);
@@ -257,7 +239,7 @@ static void garbage_collect (gc_data_t *gc_data)
     }
     while (gc_data) {
         tmp = gc_data->next;
-        threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
+        //threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
         gc_data = tmp;
     }
 }
@@ -268,6 +250,11 @@ static void garbage_collect (gc_data_t *gc_data)
 void *threadscan_gc_thread (void *ignored)
 {
     gc_data_t *gc_data;
+
+    // FIXME: Warning: Fragile code knows the size of a pointer and a page.
+    char *buffer = threadscan_alloc_mmap_shared(PAGE_SIZE * 9);
+    queue_t *commq = (queue_t*)buffer;
+    threadscan_queue_init(commq, (size_t*)&buffer[PAGE_SIZE], PAGE_SIZE);
 
     while ((1)) {
         pthread_mutex_lock(&g_gc_mutex);
@@ -291,7 +278,7 @@ void *threadscan_gc_thread (void *ignored)
         threadscan_diagnostic("%d collects waiting.\n", n);
 #endif
 
-        garbage_collect(gc_data);
+        garbage_collect(gc_data, commq);
     }
 
     return NULL;

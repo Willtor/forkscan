@@ -20,11 +20,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+#define _GNU_SOURCE // For pthread_yield().
 #include <assert.h>
 #include "alloc.h"
 #include "child.h"
 #include <malloc.h>
 #include "proc.h"
+#include <pthread.h>
+#include "queue.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,6 +75,8 @@ static int is_ref (gc_data_t *gc_data, int loc, size_t cmp)
     return gc_data->addrs[loc] == cmp;
 #endif
 }
+
+static size_t n_bytes_searched;
 
 /****************************************************************************/
 /*                            Search utilities.                             */
@@ -153,6 +158,7 @@ static void search_range (mem_range_t *range, gc_data_t *gc_data)
     mem = (size_t*)range->low;
     assert_monotonicity(gc_data->addrs, gc_data->n_addrs);
     do_search(mem, (range->high - range->low) / sizeof(size_t), gc_data);
+    n_bytes_searched += range->high - range->low;
     return;
 }
 
@@ -298,8 +304,8 @@ static int scan_memory (void *p,
         return 1;
     }
     if (bits[3] == 's') {
-        threadscan_fatal("threadscan: internal error: %s\n",
-                         "Writeable memory range was shared.");
+        // Shared writable memory.  This is probably the commq.
+        return 1;
     }
     if (0 == memcmp(path, "[stack:", 7)) {
         // Our stack.  Don't check that.  Note: This is not one of the other
@@ -329,19 +335,16 @@ static int scan_memory (void *p,
     return 1;
 }
 
-static void report_to_parent (int fd, size_t addr)
+static void report_to_parent (queue_t *commq, size_t addr)
 {
-    if (-1 == write(fd, (const void*)&addr, sizeof(size_t))) {
-        // Failed to write to the pipe.  In this case, the rest of the child's
-        // work is pointless.  This case happens, for example, if the parent
-        // exited (cleanly or no).
-
-        // Just exit quietly.
-        exit(0);
+    while (threadscan_queue_is_full(commq)) {
+        // Is the parent still alive?
+        pthread_yield();
     }
+    threadscan_queue_push(commq, addr);
 }
 
-static int once_over (gc_data_t *gc_data, int fd)
+static int once_over (gc_data_t *gc_data, queue_t *commq)
 {
     int savings = 0;
     int write_position = 0;
@@ -355,13 +358,13 @@ static int once_over (gc_data_t *gc_data, int fd)
     for (i = 0; i < gc_data->n_addrs; ++i) {
         assert((gc_data->addrs[i] & 0xF) == 0);
         assert(gc_data->addrs[i] != 0);
-
+        assert(write_position <= i);
         assert(gc_data->refs[i] >= 0);
         if (gc_data->refs[i] == 0) {
             // No outstanding refs.  This can get free'd.
             size_t addr = gc_data->addrs[i];
             assert(addr != 0 && PTR_MASK(addr) == addr);
-            report_to_parent(fd, addr);
+            report_to_parent(commq, addr);
             ++savings;
 
             // Go into the buffer referenced by addr, and for each 8 bytes see
@@ -402,7 +405,7 @@ static int once_over (gc_data_t *gc_data, int fd)
     return savings;
 }
 
-void threadscan_child (gc_data_t *gc_data_list, int fd)
+void threadscan_child (gc_data_t *gc_data_list, queue_t *commq)
 {
     gc_data_t *gc_data;
     int i;
@@ -428,18 +431,26 @@ void threadscan_child (gc_data_t *gc_data_list, int fd)
 #endif
 
     // Scan memory for references.
+    n_bytes_searched = 0;
     threadscan_proc_map_iterate(scan_memory, (void*)gc_data);
+    threadscan_diagnostic("Scanned %d KB.\n", n_bytes_searched / 1024);
 
     // Identify unreferenced memory and report back to the parent.
     int savings;
+    int iters = 0;
+    int start_count = gc_data->n_addrs;
     do {
-        savings = once_over(gc_data, fd);
+        ++iters;
+        savings = once_over(gc_data, commq);
     } while (savings > 0 && gc_data->n_addrs > 0);
+    threadscan_diagnostic("Free'd %d nodes (%d remain).\n", start_count - gc_data->n_addrs,
+                          gc_data->n_addrs);
 
     // Report unreclaimed memory.
-    report_to_parent(fd, 0);
+    report_to_parent(commq, 0);
     for (i = 0; i < gc_data->n_addrs; ++i) {
-        report_to_parent(fd, gc_data->addrs[i]);
+        report_to_parent(commq, gc_data->addrs[i]);
     }
-    //threadscan_diagnostic("Still have %d addrs.\n", (int)gc_data->n_addrs);
+    // Report done.
+    report_to_parent(commq, 0);
 }

@@ -39,6 +39,14 @@ THE SOFTWARE.
 void *threadscan_alloc_mmap (size_t size);
 
 /**
+ * mmap() for the threadscan system.  This call never fails.  But you should
+ * only ever ask for big chunks in multiples of the page size.  The mmapped
+ * memory is marked as shared among processes.
+ * @return The allocated memory.
+ */
+void *threadscan_alloc_mmap_shared (size_t size);
+
+/**
  * munmap() for the threadscan system.
  */
 void threadscan_alloc_munmap (void *ptr);

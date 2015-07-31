@@ -66,11 +66,11 @@ static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
  * function will terminate the program if it is unable to allocate memory.
  * @return A pointer to the newly allocated memory.  Failure is not an option!
  */
-static void *mmap_wrap (size_t size)
+static void *mmap_wrap (size_t size, int shared)
 {
     void *ptr = mmap(NULL, size,
                      PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS,
+                     MAP_ANONYMOUS | (shared ? MAP_SHARED : MAP_PRIVATE),
                      -1, 0);
     if (MAP_FAILED == ptr) {
         threadscan_fatal("threadscan: failed mmap().\n");
@@ -165,7 +165,7 @@ static memory_metadata_t *metadata_new ()
     if (NULL == free_list) {
         // No free nodes.  Make a few.
         size_t offset;
-        char *p = (char*)mmap_wrap(ALLOC_BLOCKSIZE);
+        char *p = (char*)mmap_wrap(ALLOC_BLOCKSIZE, 0);
 
         // The first entry is this memory block's metadata.
         memory_metadata_t *node = (memory_metadata_t*)p;
@@ -241,6 +241,22 @@ static mem_range_t metadata_break_range (mem_range_t *big_range)
     return ret;
 }
 
+static void *alloc_mmap (size_t size, int shared)
+{
+    memory_metadata_t *meta = metadata_new();
+    assert(size % PAGESIZE == 0);
+    assert(meta);
+    meta->length = size;
+    meta->addr = mmap_wrap(size, shared);
+    assert(meta->addr && meta->addr != MAP_FAILED);
+    metadata_insert(meta);
+    if (0 != mprotect(meta->addr, size, PROT_READ | PROT_WRITE)) {
+        threadscan_diagnostic("threadscan: mprotect failed %s:%d\n",
+                              __FILE__, __LINE__);
+    }
+    return meta->addr;
+}
+
 /****************************************************************************/
 /*                                Interface                                 */
 /****************************************************************************/
@@ -252,18 +268,18 @@ static mem_range_t metadata_break_range (mem_range_t *big_range)
  */
 void *threadscan_alloc_mmap (size_t size)
 {
-    memory_metadata_t *meta = metadata_new();
-    assert(size % PAGESIZE == 0);
-    assert(meta);
-    meta->length = size;
-    meta->addr = mmap_wrap(size);
-    assert(meta->addr && meta->addr != MAP_FAILED);
-    metadata_insert(meta);
-    if (0 != mprotect(meta->addr, size, PROT_READ | PROT_WRITE)) {
-        threadscan_diagnostic("threadscan: mprotect failed %s:%d\n",
-                              __FILE__, __LINE__);
-    }
-    return meta->addr;
+    return alloc_mmap(size, /*shared=*/0);
+}
+
+/**
+ * mmap() for the threadscan system.  This call never fails.  But you should
+ * only ever ask for big chunks in multiples of the page size.  The mmapped
+ * memory is marked as shared among processes.
+ * @return The allocated memory.
+ */
+void *threadscan_alloc_mmap_shared (size_t size)
+{
+    return alloc_mmap(size, /*shared=*/1);
 }
 
 /**

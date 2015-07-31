@@ -59,6 +59,11 @@ struct queue_t {
 void threadscan_queue_init (queue_t *q, size_t *buf, size_t capacity);
 
 /**
+ * Return 1 if the queue is empty, zero otherwise.
+ */
+int threadscan_queue_is_empty (queue_t *q);
+
+/**
  * Return 1 if the queue is full, zero otherwise.
  */
 int threadscan_queue_is_full (queue_t *q);

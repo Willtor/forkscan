@@ -40,6 +40,15 @@ void threadscan_queue_init (queue_t *q, size_t *buf, size_t capacity)
 }
 
 /**
+ * Return 1 if the queue is empty, zero otherwise.
+ */
+int threadscan_queue_is_empty (queue_t *q)
+{
+    assert(q->idx_head < q->idx_tail);
+    return q->idx_head + q->capacity == q->idx_tail;
+}
+
+/**
  * Return 1 if the queue is full, zero otherwise.
  */
 int threadscan_queue_is_full (queue_t *q)
@@ -62,7 +71,12 @@ void threadscan_queue_push (queue_t *q, size_t value)
 /**
  * Remove a value from the tail of the queue and return it.
  */
-size_t threadscan_queue_pop (queue_t *q);
+size_t threadscan_queue_pop (queue_t *q)
+{
+    size_t ret = q->e[INDEXIFY(q->idx_tail, q->capacity)];
+    ++q->idx_tail;
+    return ret;
+}
 
 /**
  * Push a block of values onto the queue of count "len".  Caller must verify

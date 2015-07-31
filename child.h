@@ -23,6 +23,8 @@ THE SOFTWARE.
 #ifndef _CHILD_H_
 #define _CHILD_H_
 
+#include "queue.h"
+
 typedef struct gc_data_t gc_data_t;
 
 struct gc_data_t {
@@ -35,6 +37,6 @@ struct gc_data_t {
     int n_minimap;
 };
 
-void threadscan_child (gc_data_t *gc_data, int fd);
+void threadscan_child (gc_data_t *gc_data, queue_t *commq);
 
 #endif // !defined _CHILD_H_
