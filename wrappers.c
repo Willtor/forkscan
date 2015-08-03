@@ -65,7 +65,7 @@ static int g_thread_count = 1;
 /*                            Wrapped functions.                            */
 /****************************************************************************/
 
-static pthread_create_t orig_pthread_create;
+pthread_create_t orig_pthread_create; // Exported for the sake of the child.
 static pthread_exit_t orig_pthread_exit;
 static pthread_join_t orig_pthread_join;
 static __libc_start_main_t orig_libc_start_main;

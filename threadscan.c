@@ -86,6 +86,8 @@ static gc_data_t *g_gc_data, *g_uncollected_data;
 static volatile __thread int g_in_malloc = 0;
 static __thread int g_waiting_to_fork = 0;
 
+static pid_t child_pid;
+
 /****************************************************************************/
 /*                            Pointer tracking.                             */
 /****************************************************************************/
@@ -177,7 +179,6 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 {
     static int fork_count = 0;
     int sig_count;
-    pid_t pid;
 
     // Include the addrs from the last collection iteration.
     if (g_uncollected_data) {
@@ -192,11 +193,11 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     g_received_signal = 0;
     sig_count = threadscan_proc_signal(SIGTHREADSCAN);
     while (g_received_signal < sig_count) pthread_yield();
-    pid = fork();
+    child_pid = fork();
 
-    if (pid == -1) {
+    if (child_pid == -1) {
         threadscan_fatal("Collection failed (fork).\n");
-    } else if (pid == 0) {
+    } else if (child_pid == 0) {
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
         threadscan_child(gc_data, commq);
@@ -353,4 +354,13 @@ static void register_signal_handlers ()
     // Calculate reserved space for stored addresses.
     g_tsdata.working_buffer_sz = g_tsdata.max_ptrs * sizeof(size_t)
         + PAGE_SIZE;
+}
+
+__attribute__((destructor))
+static void process_death ()
+{
+    if (child_pid > 0) {
+        // There's still an outstanding child.  Kill it.
+        kill(child_pid, 9);
+    }
 }
