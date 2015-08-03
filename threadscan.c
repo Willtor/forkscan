@@ -175,6 +175,7 @@ static size_t read_from_child (queue_t *commq)
 
 static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 {
+    static int fork_count = 0;
     int sig_count;
     pid_t pid;
 
@@ -201,6 +202,8 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         threadscan_child(gc_data, commq);
         exit(0);
     }
+
+    threadscan_diagnostic("Fork count: %d\n", ++fork_count);
 
     // Parent: Listen to the child process.  It will report pointers to free
     // followed by pointers that could not be collected.

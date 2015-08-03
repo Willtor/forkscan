@@ -337,11 +337,19 @@ static int scan_memory (void *p,
 
 static void report_to_parent (queue_t *commq, size_t addr)
 {
-    while (threadscan_queue_is_full(commq)) {
-        // Is the parent still alive?
-        pthread_yield();
+    // Batch up the addresses to submit to reduce contention on commq.
+    static size_t buf[256];
+    static size_t idx = 0;
+
+    buf[idx++] = addr;
+    if (idx >= 256 || addr == 0) {
+        while (256 > threadscan_queue_available(commq)) {
+            // FIXME: Is the parent still alive?
+            pthread_yield();
+        }
+        threadscan_queue_push_bulk(commq, buf, idx);
+        idx = 0;
     }
-    threadscan_queue_push(commq, addr);
 }
 
 static int once_over (gc_data_t *gc_data, queue_t *commq)

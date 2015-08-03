@@ -69,6 +69,11 @@ int threadscan_queue_is_empty (queue_t *q);
 int threadscan_queue_is_full (queue_t *q);
 
 /**
+ * Return the number of empty slots in the queue.
+ */
+int threadscan_queue_available (queue_t *q);
+
+/**
  * Push a value onto the head of the queue.  Caller must verify there is
  * space on the queue.
  */
