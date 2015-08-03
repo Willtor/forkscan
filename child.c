@@ -352,55 +352,87 @@ static void report_to_parent (queue_t *commq, size_t addr)
     }
 }
 
-static int once_over (gc_data_t *gc_data, queue_t *commq)
+typedef struct unref_config_t unref_config_t;
+
+struct unref_config_t
 {
-    int savings = 0;
-    int write_position = 0;
-    int i, j;
+    gc_data_t *gc_data;
+    queue_t *commq;
     size_t min_val, max_val;
+};
 
-    min_val = gc_data->addrs[0];
-    max_val = gc_data->addrs[gc_data->n_addrs - 1]
-        + gc_data->alloc_sz[gc_data->n_addrs - 1] - sizeof(size_t);
+static int unref_addr (unref_config_t *unref_config, int n, int max_depth)
+{
+    int i;
+    size_t *addrs = unref_config->gc_data->addrs;
+    size_t addr = addrs[n];
+    assert(0 == (addr & 1));
+    size_t *p = (size_t*)addr;
+    int elements = unref_config->gc_data->alloc_sz[n] / sizeof(size_t);
 
-    for (i = 0; i < gc_data->n_addrs; ++i) {
-        assert((gc_data->addrs[i] & 0xF) == 0);
-        assert(gc_data->addrs[i] != 0);
-        assert(write_position <= i);
-        assert(gc_data->refs[i] >= 0);
-        if (gc_data->refs[i] == 0) {
-            // No outstanding refs.  This can get free'd.
-            size_t addr = gc_data->addrs[i];
-            assert(addr != 0 && PTR_MASK(addr) == addr);
-            report_to_parent(commq, addr);
-            ++savings;
+    // Report the address to the parent and set the low bit to mark it removed.
+    int saved = 1;
+    report_to_parent(unref_config->commq, addr);
+    addrs[n] |= 1;
 
-            // Go into the buffer referenced by addr, and for each 8 bytes see
-            // if it's a reference to an address we're tracking.  If so,
-            // decrement the ref count for that address.
-            for (j = 0; j < gc_data->alloc_sz[i]; j += sizeof(size_t)) {
-                size_t p = PTR_MASK(((size_t*)addr)[j / sizeof(size_t)]);
-                if (p >= min_val && p <= max_val) {
-                    // This could be an address.
-                    int loc;
-                    if (p < addr) {
-                        loc = binary_search(p, gc_data->addrs, 0,
-                                            write_position);
-                    } else {
-                        loc = binary_search(p, gc_data->addrs, i,
-                                            gc_data->n_addrs);
-                    }
+    for (i = 0; i < elements; ++i) {
+        size_t deep_addr = PTR_MASK(p[i]);
+        if (deep_addr >= unref_config->min_val
+            && deep_addr <= unref_config->max_val) {
 
-                    if (is_ref(gc_data, loc, p)) {
-                        --gc_data->refs[loc];
-                        assert(gc_data->refs[loc] >= 0);
-                    }
+            // Found a value within our range of addresses.  See if it's in
+            // our set.
+            int loc = deep_addr < addr
+                ? binary_search(deep_addr, addrs, 0, n)
+                : binary_search(deep_addr, addrs, n,
+                                unref_config->gc_data->n_addrs);
+
+            if (is_ref(unref_config->gc_data, loc, deep_addr)) {
+
+                // Found an apparent address.  Unreference it.
+                int remaining_refs = --unref_config->gc_data->refs[loc];
+                assert(remaining_refs >= 0);
+                if (remaining_refs == 0 && max_depth > 0) {
+
+                    // Recurse, if depth permits.  We have a max depth
+                    // parameter because in certain cases, the stack could
+                    // overflow.
+                    saved += unref_addr(unref_config, loc, max_depth - 1);
                 }
             }
+        }
+    }
 
-        } else {
-            // Still outstanding refs.
-            if (write_position != i) { // Shift the address back.
+    return saved;
+}
+
+static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
+{
+    unref_config_t unref_config;
+    int savings = 0;
+    int i;
+
+    unref_config.gc_data = gc_data;
+    unref_config.commq = commq;
+    unref_config.min_val = gc_data->addrs[0];
+    // FIXME: max_val should change in the case of DEEP_REFERENCES.
+    unref_config.max_val = gc_data->addrs[gc_data->n_addrs - 1];
+
+    // Search for unreferenced nodes.
+    for (i = 0; i < gc_data->n_addrs; ++i) {
+        assert(gc_data->addrs[i] != 0);
+        assert(gc_data->refs[i] >= 0);
+        if (gc_data->refs[i] == 0 && (0 == (gc_data->addrs[i] & 1))) {
+            savings += unref_addr(&unref_config, i, 20);
+        }
+    }
+
+    // Compact the list.
+    int write_position = 0;
+    for (i = 0; i < gc_data->n_addrs; ++i) {
+        if (0 == (gc_data->addrs[i] & 1)) {
+            // Address doesn't have its low bit set: still alive.
+            if (write_position != i) {
                 gc_data->addrs[write_position] = gc_data->addrs[i];
                 gc_data->refs[write_position] = gc_data->refs[i];
                 gc_data->alloc_sz[write_position] = gc_data->alloc_sz[i];
@@ -408,8 +440,9 @@ static int once_over (gc_data_t *gc_data, queue_t *commq)
             ++write_position;
         }
     }
-
     gc_data->n_addrs = write_position;
+    assert_monotonicity(gc_data->addrs, gc_data->n_addrs);
+
     return savings;
 }
 
@@ -449,10 +482,12 @@ void threadscan_child (gc_data_t *gc_data_list, queue_t *commq)
     int start_count = gc_data->n_addrs;
     do {
         ++iters;
-        savings = once_over(gc_data, commq);
+        savings = find_unreferenced_nodes(gc_data, commq);
     } while (savings > 0 && gc_data->n_addrs > 0);
-    threadscan_diagnostic("Free'd %d nodes (%d remain).\n", start_count - gc_data->n_addrs,
-                          gc_data->n_addrs);
+    threadscan_diagnostic("Free'd %d nodes (%d remain, %d iters).\n",
+                          start_count - gc_data->n_addrs,
+                          gc_data->n_addrs,
+                          iters);
 
     // Report unreclaimed memory.
     report_to_parent(commq, 0);
