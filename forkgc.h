@@ -20,26 +20,27 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#ifndef _CHILD_H_
-#define _CHILD_H_
+#ifndef _FORKGC_H_
+#define _FORKGC_H_
 
-#include "queue.h"
+#include "child.h" // FIXME: Should define gc_data_t in forkgc.h
+#include <signal.h>
 
-typedef struct gc_data_t gc_data_t;
+#define SIGTHREADSCAN SIGUSR1
 
-struct gc_data_t {
-    gc_data_t *next;
-    size_t *addrs;
-    /////////////////////////////////////////// FIXME: unnecessary?
-    size_t *minimap;
-    int *refs;
-    int *alloc_sz;
-    ///////////////////////////////////////////
-    int n_addrs;
-    int n_minimap; // unnecessary?
-    int capacity;
-};
+/**
+ * Wait for the GC routine to complete its snapshot.
+ */
+void forkgc_wait_for_snapshot ();
 
-void threadscan_child (gc_data_t *gc_data, queue_t *commq);
+/**
+ * Pass a list of pointers to the GC thread for it to collect.
+ */
+void forkgc_initiate_collection (gc_data_t *gc_data);
 
-#endif // !defined _CHILD_H_
+/**
+ * Garbage-collector thread.
+ */
+void *forkgc_thread (void *ignored);
+
+#endif

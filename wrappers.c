@@ -26,6 +26,7 @@ THE SOFTWARE.
 #include <assert.h>
 #include <dlfcn.h>
 #include "env.h"
+#include "forkgc.h"
 #include "proc.h"
 #include <pthread.h>
 #include <stdlib.h>
@@ -230,9 +231,8 @@ int __libc_start_main(int (*main) (int, char **, char **),
                       void (*rtld_fini) (void),
                       void (*stack_end))
 {
-    extern void *threadscan_gc_thread (void *); // Defined in threadscan.c.
     pthread_t tid;
-    int ret = orig_pthread_create(&tid, NULL, threadscan_gc_thread, NULL);
+    int ret = orig_pthread_create(&tid, NULL, forkgc_thread, NULL);
     if (0 != ret) {
         threadscan_fatal("Unable to start garbage collector.\n");
         // Does not return.

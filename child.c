@@ -365,8 +365,8 @@ static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
     int i;
     size_t *addrs = unref_config->gc_data->addrs;
     size_t addr = addrs[n];
-    assert(0 == (addr & 1));
-    size_t *p = (size_t*)addr;
+    assert(addr & 1);
+    size_t *p = (size_t*)PTR_MASK(addr);
     int elements = unref_config->gc_data->alloc_sz[n] / sizeof(size_t);
 
     for (i = 0; i < elements; ++i) {
@@ -421,7 +421,7 @@ static void *address_range (void *arg)
         assert(gc_data->refs[i] >= 0);
         if (0 == (addr & 1) && gc_data->refs[i] == 0) {
             if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
-                unref_addr(in->unref_config, i, 5);
+                unref_addr(in->unref_config, i, 30);
             }
         }
     }
@@ -460,19 +460,19 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     }
     ara[thread_count - 1].range_end = gc_data->n_addrs;
 
-    threadscan_diagnostic("Starting threads.\n");
-
     // Start the threads.
     for (i = 0; i < thread_count; ++i) {
+        address_range((void*)&ara[i]);
+        /*
         extern int orig_pthread_create (pthread_t *, const pthread_attr_t *,
                                         void *(*) (void *), void *);
         if (orig_pthread_create(&threads[i], NULL, address_range, &ara[i])) {
             threadscan_fatal("Child was unable to create a thread.\n");
         }
+        */
     }
 
-    threadscan_diagnostic("Started threads.\n");
-
+    /*
     // Wait for threads to return.
     for (i = 0; i < thread_count; ++i) {
         extern int orig_pthread_join (pthread_t, void **);
@@ -480,8 +480,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
             threadscan_fatal("Child failed to join a thread.\n");
         }
     }
-
-    threadscan_diagnostic("Joined threads.\n");
+    */
 
     // Report nodes and compact the list.
     int write_position = 0;
