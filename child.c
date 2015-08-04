@@ -357,11 +357,10 @@ typedef struct unref_config_t unref_config_t;
 struct unref_config_t
 {
     gc_data_t *gc_data;
-    queue_t *commq;
     size_t min_val, max_val;
 };
 
-static int unref_addr (unref_config_t *unref_config, int n, int max_depth)
+static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
 {
     int i;
     size_t *addrs = unref_config->gc_data->addrs;
@@ -369,11 +368,6 @@ static int unref_addr (unref_config_t *unref_config, int n, int max_depth)
     assert(0 == (addr & 1));
     size_t *p = (size_t*)addr;
     int elements = unref_config->gc_data->alloc_sz[n] / sizeof(size_t);
-
-    // Report the address to the parent and set the low bit to mark it removed.
-    int saved = 1;
-    report_to_parent(unref_config->commq, addr);
-    addrs[n] |= 1;
 
     for (i = 0; i < elements; ++i) {
         size_t deep_addr = PTR_MASK(p[i]);
@@ -390,47 +384,113 @@ static int unref_addr (unref_config_t *unref_config, int n, int max_depth)
             if (is_ref(unref_config->gc_data, loc, deep_addr)) {
 
                 // Found an apparent address.  Unreference it.
-                int remaining_refs = --unref_config->gc_data->refs[loc];
+                __sync_fetch_and_sub(&unref_config->gc_data->refs[loc], 1);
+                int remaining_refs = unref_config->gc_data->refs[loc];
                 assert(remaining_refs >= 0);
-                if (remaining_refs == 0 && max_depth > 0) {
+                if (max_depth > 0
+                    && remaining_refs == 0
+                    && BCAS(&unref_config->gc_data->addrs[loc],
+                            deep_addr, deep_addr | 1)) {
 
                     // Recurse, if depth permits.  We have a max depth
                     // parameter because in certain cases, the stack could
                     // overflow.
-                    saved += unref_addr(unref_config, loc, max_depth - 1);
+                    unref_addr(unref_config, loc, max_depth - 1);
                 }
             }
         }
     }
-
-    return saved;
 }
+
+typedef struct address_range_arg_t address_range_arg_t;
+
+struct address_range_arg_t
+{
+    unref_config_t *unref_config;
+    int range_begin, range_end;
+};
+
+static void *address_range (void *arg)
+{
+    address_range_arg_t *in = (address_range_arg_t*)arg;
+    gc_data_t *gc_data = in->unref_config->gc_data;
+    int i;
+    for (i = in->range_begin; i < in->range_end; ++i) {
+        size_t addr = gc_data->addrs[i];
+        assert(addr != 0);
+        assert(gc_data->refs[i] >= 0);
+        if (0 == (addr & 1) && gc_data->refs[i] == 0) {
+            if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
+                unref_addr(in->unref_config, i, 5);
+            }
+        }
+    }
+    return NULL;
+}
+
+#define MAX_THREADS 80
+#define ADDRS_PER_THREAD (1000 * 1000)
 
 static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
 {
+    pthread_t threads[MAX_THREADS];
+    address_range_arg_t ara[MAX_THREADS];
     unref_config_t unref_config;
-    int savings = 0;
+    int thread_count;
+    int addrs_per_thread;
     int i;
 
     unref_config.gc_data = gc_data;
-    unref_config.commq = commq;
     unref_config.min_val = gc_data->addrs[0];
     // FIXME: max_val should change in the case of DEEP_REFERENCES.
     unref_config.max_val = gc_data->addrs[gc_data->n_addrs - 1];
 
-    // Search for unreferenced nodes.
-    for (i = 0; i < gc_data->n_addrs; ++i) {
-        assert(gc_data->addrs[i] != 0);
-        assert(gc_data->refs[i] >= 0);
-        if (gc_data->refs[i] == 0 && (0 == (gc_data->addrs[i] & 1))) {
-            savings += unref_addr(&unref_config, i, 20);
+    // Configure threads.
+    thread_count = (gc_data->n_addrs / ADDRS_PER_THREAD) + 1;
+    assert(thread_count > 0);
+    if (thread_count > MAX_THREADS) {
+        thread_count = MAX_THREADS;
+    }
+    addrs_per_thread = gc_data->n_addrs / thread_count;
+
+    for (i = 0; i < thread_count; ++i) {
+        ara[i].unref_config = &unref_config;
+        ara[i].range_begin = i * addrs_per_thread;
+        ara[i].range_end = (i + 1) * addrs_per_thread;
+    }
+    ara[thread_count - 1].range_end = gc_data->n_addrs;
+
+    threadscan_diagnostic("Starting threads.\n");
+
+    // Start the threads.
+    for (i = 0; i < thread_count; ++i) {
+        extern int orig_pthread_create (pthread_t *, const pthread_attr_t *,
+                                        void *(*) (void *), void *);
+        if (orig_pthread_create(&threads[i], NULL, address_range, &ara[i])) {
+            threadscan_fatal("Child was unable to create a thread.\n");
         }
     }
 
-    // Compact the list.
+    threadscan_diagnostic("Started threads.\n");
+
+    // Wait for threads to return.
+    for (i = 0; i < thread_count; ++i) {
+        extern int orig_pthread_join (pthread_t, void **);
+        if (orig_pthread_join(threads[i], NULL)) {
+            threadscan_fatal("Child failed to join a thread.\n");
+        }
+    }
+
+    threadscan_diagnostic("Joined threads.\n");
+
+    // Report nodes and compact the list.
     int write_position = 0;
+    int savings = 0;
     for (i = 0; i < gc_data->n_addrs; ++i) {
-        if (0 == (gc_data->addrs[i] & 1)) {
+        if (gc_data->addrs[i] & 1) {
+            report_to_parent(commq, (gc_data->addrs[i] & ~0x1ULL));
+            ++savings;
+        } else {
             // Address doesn't have its low bit set: still alive.
             if (write_position != i) {
                 gc_data->addrs[write_position] = gc_data->addrs[i];
