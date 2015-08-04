@@ -24,6 +24,7 @@ THE SOFTWARE.
 #include "alloc.h"
 #include <assert.h>
 #include "child.h"
+#include <fcntl.h>
 #include "forkgc.h"
 #include <malloc.h>
 #include "proc.h"
@@ -33,6 +34,9 @@ THE SOFTWARE.
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#define PIPE_READ 0
+#define PIPE_WRITE 1
 
 #ifndef NDEBUG
 #define assert_monotonicity(a, n)                       \
@@ -117,12 +121,12 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     // Total pages needed is the number of pages for the addresses, plus the
     // number of pages needed for the minimap, plus one (for the gc_data_t).
     char *p =
-        (char*)threadscan_alloc_mmap((pages_of_addrs     // addr array.
-                                      + pages_of_minimap // minimap.
-                                      + pages_of_count   // ref count.
-                                      + pages_of_count   // alloc size.
-                                      + 1)               // struct page.
-                                     * PAGE_SIZE);
+        (char*)threadscan_alloc_mmap_shared((pages_of_addrs     // addr array.
+                                             + pages_of_minimap // minimap.
+                                             + pages_of_count   // ref count.
+                                             + pages_of_count   // alloc size.
+                                             + 1)               // struct page.
+                                            * PAGE_SIZE);
 
     // Perform assignments as offsets into the block that was bulk-allocated.
     size_t offset = 0;
@@ -177,6 +181,7 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     static int fork_count = 0;
     gc_data_t *working_data;
     int sig_count;
+    int pipefd[2];
 
     // Include the addrs from the last collection iteration.
     if (g_uncollected_data) {
@@ -187,6 +192,11 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     }
 
     working_data = aggregate_gc_data(gc_data);
+
+    // Open a pipe for communication between parent and child.
+    if (0 != pipe2(pipefd, O_DIRECT)) {
+        threadscan_fatal("GC thread was unable to open a pipe.\n");
+    }
 
     // Send out signals.  When everybody is waiting at the line, fork the
     // process for the snapshot.
@@ -200,10 +210,13 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     } else if (child_pid == 0) {
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
+        close(pipefd[PIPE_READ]);
         threadscan_child(working_data, commq);
+        close(pipefd[PIPE_WRITE]);
         exit(0);
     }
 
+    close(pipefd[PIPE_WRITE]);
     threadscan_diagnostic("Fork count: %d\n", ++fork_count);
 
     // Parent: Listen to the child process.  It will report pointers to free
@@ -246,6 +259,7 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
         gc_data = tmp;
     }
+    close(pipefd[PIPE_READ]);
     threadscan_alloc_munmap(working_data); // FIXME: ...
 }
 

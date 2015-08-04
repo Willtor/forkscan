@@ -25,7 +25,6 @@ THE SOFTWARE.
 #include <assert.h>
 #include "child.h"
 #include "env.h"
-#include <fcntl.h> // FIXME: needed?
 #include "forkgc.h"
 #include <malloc.h>
 #include "proc.h"
