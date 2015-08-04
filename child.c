@@ -234,7 +234,6 @@ void threadscan_child (gc_data_t *gc_data, int fd)
     // Scan memory for references.
     n_bytes_searched = 0;
     threadscan_proc_map_iterate(scan_memory, (void*)gc_data);
-    threadscan_diagnostic("Scanned %d KB.\n", n_bytes_searched / 1024);
     if (sizeof(size_t) != write(fd, &n_bytes_searched, sizeof(size_t))) {
         threadscan_fatal("Failed to write to parent.\n");
     }
