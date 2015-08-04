@@ -25,6 +25,8 @@ THE SOFTWARE.
 
 #include "queue.h"
 
+//#define DEEP_REFERENCES 1
+
 typedef struct gc_data_t gc_data_t;
 
 struct gc_data_t {
@@ -40,6 +42,10 @@ struct gc_data_t {
     int capacity;
 };
 
-void threadscan_child (gc_data_t *gc_data, queue_t *commq);
+int is_ref (gc_data_t *gc_data, int loc, size_t cmp);
+
+int binary_search (size_t val, size_t *a, int min, int max);
+
+void threadscan_child (gc_data_t *gc_data, int fd);
 
 #endif // !defined _CHILD_H_

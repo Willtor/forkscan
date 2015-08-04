@@ -70,12 +70,156 @@ static int g_gc_waiting;
 
 static pid_t child_pid;
 
-static size_t read_from_child (queue_t *commq)
+typedef struct unref_config_t unref_config_t;
+
+struct unref_config_t
 {
-    while (threadscan_queue_is_empty(commq)) {
-        pthread_yield();
+    gc_data_t *gc_data;
+    size_t min_val, max_val;
+};
+
+static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
+{
+    int i;
+    size_t *addrs = unref_config->gc_data->addrs;
+    size_t addr = addrs[n];
+    assert(addr & 1);
+    size_t *p = (size_t*)PTR_MASK(addr);
+    int elements = unref_config->gc_data->alloc_sz[n] / sizeof(size_t);
+
+    for (i = 0; i < elements; ++i) {
+        size_t deep_addr = PTR_MASK(p[i]);
+        if (deep_addr >= unref_config->min_val
+            && deep_addr <= unref_config->max_val) {
+
+            // Found a value within our range of addresses.  See if it's in
+            // our set.  Also, null it.
+            p[i] = 0;
+            int loc = deep_addr < addr
+                ? binary_search(deep_addr, addrs, 0, n)
+                : binary_search(deep_addr, addrs, n,
+                                unref_config->gc_data->n_addrs);
+
+            if (is_ref(unref_config->gc_data, loc, deep_addr)) {
+
+                // Found an apparent address.  Unreference it.
+                __sync_fetch_and_sub(&unref_config->gc_data->refs[loc], 1);
+                int remaining_refs = unref_config->gc_data->refs[loc];
+                assert(remaining_refs >= 0);
+                if (max_depth > 0
+                    && remaining_refs == 0
+                    && BCAS(&unref_config->gc_data->addrs[loc],
+                            deep_addr, deep_addr | 1)) {
+
+                    // Recurse, if depth permits.  We have a max depth
+                    // parameter because in certain cases, the stack could
+                    // overflow.
+                    unref_addr(unref_config, loc, max_depth - 1);
+                }
+            }
+        }
     }
-    return threadscan_queue_pop(commq);
+    free(p); // Done with it!  Bam!
+}
+
+typedef struct address_range_arg_t address_range_arg_t;
+
+struct address_range_arg_t
+{
+    unref_config_t *unref_config;
+    int range_begin, range_end;
+};
+
+static void *address_range (void *arg)
+{
+    address_range_arg_t *in = (address_range_arg_t*)arg;
+    gc_data_t *gc_data = in->unref_config->gc_data;
+    int i;
+    for (i = in->range_begin; i < in->range_end; ++i) {
+        size_t addr = gc_data->addrs[i];
+        assert(addr != 0);
+        assert(gc_data->refs[i] >= 0);
+        if (0 == (addr & 1) && gc_data->refs[i] == 0) {
+            if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
+                unref_addr(in->unref_config, i, 30);
+            }
+        }
+    }
+    return NULL;
+}
+
+#define MAX_THREADS 80
+#define ADDRS_PER_THREAD (1000 * 1000)
+
+static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
+{
+    pthread_t threads[MAX_THREADS];
+    address_range_arg_t ara[MAX_THREADS];
+    unref_config_t unref_config;
+    int thread_count;
+    int addrs_per_thread;
+    int i;
+
+    unref_config.gc_data = gc_data;
+    unref_config.min_val = gc_data->addrs[0];
+    // FIXME: max_val should change in the case of DEEP_REFERENCES.
+    unref_config.max_val = gc_data->addrs[gc_data->n_addrs - 1];
+
+    // Configure threads.
+    thread_count = (gc_data->n_addrs / ADDRS_PER_THREAD) + 1;
+    assert(thread_count > 0);
+    if (thread_count > MAX_THREADS) {
+        thread_count = MAX_THREADS;
+    }
+    addrs_per_thread = gc_data->n_addrs / thread_count;
+
+    for (i = 0; i < thread_count; ++i) {
+        ara[i].unref_config = &unref_config;
+        ara[i].range_begin = i * addrs_per_thread;
+        ara[i].range_end = (i + 1) * addrs_per_thread;
+    }
+    ara[thread_count - 1].range_end = gc_data->n_addrs;
+
+    // Start the threads.
+    for (i = 0; i < thread_count; ++i) {
+        address_range((void*)&ara[i]);
+        /*
+        extern int orig_pthread_create (pthread_t *, const pthread_attr_t *,
+                                        void *(*) (void *), void *);
+        if (orig_pthread_create(&threads[i], NULL, address_range, &ara[i])) {
+            threadscan_fatal("Child was unable to create a thread.\n");
+        }
+        */
+    }
+
+    /*
+    // Wait for threads to return.
+    for (i = 0; i < thread_count; ++i) {
+        extern int orig_pthread_join (pthread_t, void **);
+        if (orig_pthread_join(threads[i], NULL)) {
+            threadscan_fatal("Child failed to join a thread.\n");
+        }
+    }
+    */
+
+    // Compact the list.
+    int write_position = 0;
+    int savings = 0;
+    for (i = 0; i < gc_data->n_addrs; ++i) {
+        if (gc_data->addrs[i] & 1) ++savings;
+        else {
+            // Address doesn't have its low bit set: still alive.
+            if (write_position != i) {
+                gc_data->addrs[write_position] = gc_data->addrs[i];
+                gc_data->refs[write_position] = gc_data->refs[i];
+                gc_data->alloc_sz[write_position] = gc_data->alloc_sz[i];
+            }
+            ++write_position;
+        }
+    }
+    gc_data->n_addrs = write_position;
+
+    return savings;
 }
 
 static void generate_minimap (gc_data_t *gc_data)
@@ -178,7 +322,6 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
 
 static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 {
-    static int fork_count = 0;
     gc_data_t *working_data;
     int sig_count;
     int pipefd[2];
@@ -211,38 +354,50 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
         close(pipefd[PIPE_READ]);
-        threadscan_child(working_data, commq);
+        threadscan_child(working_data, pipefd[PIPE_WRITE]);
         close(pipefd[PIPE_WRITE]);
         exit(0);
     }
 
-    close(pipefd[PIPE_WRITE]);
-    threadscan_diagnostic("Fork count: %d\n", ++fork_count);
-
-    // Parent: Listen to the child process.  It will report pointers to free
-    // followed by pointers that could not be collected.
-    size_t addr;
-
     ++g_cleanup_counter;
+    close(pipefd[PIPE_WRITE]);
+    threadscan_diagnostic("Fork count: %d\n", g_cleanup_counter);
+
+    // Wait for the child to complete the scan.
+    size_t bytes_scanned;
+    if (sizeof(size_t) != read(pipefd[PIPE_READ], &bytes_scanned,
+                               sizeof(size_t))) {
+        threadscan_fatal("Failed to read from child.\n");
+    }
+    threadscan_diagnostic("Scanned %llu KB.\n", bytes_scanned / 1024);
+
+    // Identify unreferenced memory and free it.
+    int savings;
+    int iters = 0;
+    int start_count = working_data->n_addrs;
+    do {
+        ++iters;
+        savings = find_unreferenced_nodes(working_data, commq);
+    } while (savings > 0 && working_data->n_addrs > 0);
+    threadscan_diagnostic("Free'd %d nodes (%d remain, %d iters).\n",
+                          start_count - working_data->n_addrs,
+                          working_data->n_addrs,
+                          iters);
 
     gc_data->n_addrs = 0;
-    g_uncollected_data = NULL;
-    // Collect nodes to free.
-    while (0 != (addr = read_from_child(commq))) {
-        void *p = (void*)addr;
-        memset(p, 0, malloc_usable_size(p));
-        free(p);
-    }
-    // Collect nodes that could not be free'd.
-    while (0 != (addr = read_from_child(commq))) {
+    int i;
+    for (i = 0; i < working_data->n_addrs; ++i) {
         if (g_uncollected_data == NULL) g_uncollected_data = gc_data;
         if (gc_data->n_addrs >= gc_data->capacity) {
             gc_data = gc_data->next;
             assert(gc_data != NULL);
             gc_data->n_addrs = 0;
         }
-        gc_data->addrs[gc_data->n_addrs++] = addr;
+        gc_data->addrs[gc_data->n_addrs++] = working_data->addrs[i];
     }
+
+    close(pipefd[PIPE_READ]);
+    threadscan_alloc_munmap(working_data); // FIXME: ...
 
     // Free up unnecessary space.
     assert(gc_data);
@@ -251,16 +406,12 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         tmp = gc_data;
         gc_data = gc_data->next;
         tmp->next = NULL;
-    } else {
-        assert(NULL == g_uncollected_data);
-    }
+    } else assert(NULL == g_uncollected_data);
     while (gc_data) {
         tmp = gc_data->next;
         threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
         gc_data = tmp;
     }
-    close(pipefd[PIPE_READ]);
-    threadscan_alloc_munmap(working_data); // FIXME: ...
 }
 
 /****************************************************************************/

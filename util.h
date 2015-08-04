@@ -44,6 +44,8 @@ THE SOFTWARE.
     pthread_mutex_unlock(&(tl)->lock);          \
     } while (0)
 
+#define PTR_MASK(v) ((v) & ~3) // Mask off the low two bits.
+
 #define PAGESIZE ((size_t)0x1000)
 
 #define PAGEALIGN(addr) ((addr) & ~(PAGESIZE - 1))
