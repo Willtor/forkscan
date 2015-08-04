@@ -42,27 +42,6 @@ THE SOFTWARE.
 
 #define PTR_MASK(v) ((v) & ~3) // Mask off the low two bits.
 
-#ifndef NDEBUG
-#define assert_monotonicity(a, n)                       \
-    __assert_monotonicity(a, n, __FILE__, __LINE__)
-static void __assert_monotonicity (size_t *a, int n, const char *f, int line)
-{
-    size_t last = 0;
-    int i;
-    for (i = 0; i < n; ++i) {
-        if (a[i] <= last) {
-            threadscan_diagnostic("Error at %s:%d\n", f, line);
-            threadscan_fatal("The list is not monotonic at position %d "
-                             "out of %d (%llu, last: %llu)\n",
-                             i, n, a[i], last);
-        }
-        last = a[i];
-    }
-}
-#else
-#define assert_monotonicity(a, b) /* nothing. */
-#endif
-
 #define BINARY_THRESHOLD 32
 
 static int is_ref (gc_data_t *gc_data, int loc, size_t cmp)
@@ -156,89 +135,9 @@ static void search_range (mem_range_t *range, gc_data_t *gc_data)
     assert(range);
 
     mem = (size_t*)range->low;
-    assert_monotonicity(gc_data->addrs, gc_data->n_addrs);
     do_search(mem, (range->high - range->low) / sizeof(size_t), gc_data);
     n_bytes_searched += range->high - range->low;
     return;
-}
-
-static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
-{
-    gc_data_t *ret, *tmp;
-    size_t n_addrs = 0;
-    int list_count = 0;
-
-    tmp = data_list;
-    do {
-        n_addrs += tmp->n_addrs;
-        ++list_count;
-    } while ((tmp = tmp->next));
-    //threadscan_diagnostic("List of %d dealies.\n", list_count);
-
-    assert(n_addrs != 0);
-
-    // How many pages of memory are needed to store this many addresses?
-    size_t pages_of_addrs = ((n_addrs * sizeof(size_t))
-                             + PAGE_SIZE - sizeof(size_t)) / PAGE_SIZE;
-    // How many pages of memory are needed to store the minimap?
-    size_t pages_of_minimap = ((pages_of_addrs * sizeof(size_t))
-                               + PAGE_SIZE - sizeof(size_t)) / PAGE_SIZE;
-    // How many pages are needed to store the allocated size and reference
-    // count arrays?
-    size_t pages_of_count = ((n_addrs * sizeof(int))
-                             + PAGE_SIZE - sizeof(int)) / PAGE_SIZE;
-    // Total pages needed is the number of pages for the addresses, plus the
-    // number of pages needed for the minimap, plus one (for the gc_data_t).
-    char *p =
-        (char*)threadscan_alloc_mmap((pages_of_addrs     // addr array.
-                                      + pages_of_minimap // minimap.
-                                      + pages_of_count   // ref count.
-                                      + pages_of_count   // alloc size.
-                                      + 1)               // struct page.
-                                     * PAGE_SIZE);
-
-    // Perform assignments as offsets into the block that was bulk-allocated.
-    size_t offset = 0;
-    ret = (gc_data_t*)p;
-    offset += PAGE_SIZE;
-
-    ret->addrs = (size_t*)(p + offset);
-    offset += pages_of_addrs * PAGE_SIZE;
-
-    ret->minimap = (size_t*)(p + offset);
-    offset += pages_of_minimap * PAGE_SIZE;
-
-    ret->refs = (int*)(p + offset);
-    offset += pages_of_count * PAGE_SIZE;
-
-    ret->alloc_sz = (int*)(p + offset);
-
-    ret->n_addrs = n_addrs;
-
-    // Copy the addresses over.
-    char *dest = (char*)ret->addrs;
-    tmp = data_list;
-    do {
-        memcpy(dest, tmp->addrs, tmp->n_addrs * sizeof(size_t));
-        dest += tmp->n_addrs * sizeof(size_t);
-    } while ((tmp = tmp->next));
-
-    return ret;
-}
-
-static void generate_minimap (gc_data_t *gc_data)
-{
-    size_t i;
-
-    assert(gc_data);
-    assert(gc_data->addrs);
-    assert(gc_data->minimap);
-
-    gc_data->n_minimap = 0;
-    for (i = 0; i < gc_data->n_addrs; i += (PAGESIZE / sizeof(size_t))) {
-        gc_data->minimap[gc_data->n_minimap] = gc_data->addrs[i];
-        ++gc_data->n_minimap;
-    }
 }
 
 /**
@@ -500,36 +399,12 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
         }
     }
     gc_data->n_addrs = write_position;
-    assert_monotonicity(gc_data->addrs, gc_data->n_addrs);
 
     return savings;
 }
 
-void threadscan_child (gc_data_t *gc_data_list, queue_t *commq)
+void threadscan_child (gc_data_t *gc_data, queue_t *commq)
 {
-    gc_data_t *gc_data;
-    int i;
-
-    // Collect all of the addresses into a single array, sort them, and
-    // create a minimap (to make searching faster).
-    gc_data = aggregate_gc_data(gc_data_list);
-    threadscan_util_sort(gc_data->addrs, gc_data->n_addrs);
-    assert_monotonicity(gc_data->addrs, gc_data->n_addrs);
-    generate_minimap(gc_data);
-
-    // Get the size of each malloc'd block.
-    for (i = 0; i < gc_data->n_addrs; ++i) {
-        assert(gc_data->alloc_sz[i] == 0);
-        gc_data->alloc_sz[i] = malloc_usable_size((void*)gc_data->addrs[i]);
-        assert(gc_data->alloc_sz[i] > 0);
-    }
-
-#ifndef NDEBUG
-    for (i = 0; i < gc_data->n_addrs; ++i) {
-        assert(gc_data->refs[i] == 0);
-    }
-#endif
-
     // Scan memory for references.
     n_bytes_searched = 0;
     threadscan_proc_map_iterate(scan_memory, (void*)gc_data);
@@ -550,6 +425,7 @@ void threadscan_child (gc_data_t *gc_data_list, queue_t *commq)
 
     // Report unreclaimed memory.
     report_to_parent(commq, 0);
+    int i;
     for (i = 0; i < gc_data->n_addrs; ++i) {
         report_to_parent(commq, gc_data->addrs[i]);
     }

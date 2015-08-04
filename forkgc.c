@@ -34,6 +34,27 @@ THE SOFTWARE.
 #include <string.h>
 #include <unistd.h>
 
+#ifndef NDEBUG
+#define assert_monotonicity(a, n)                       \
+    __assert_monotonicity(a, n, __FILE__, __LINE__)
+static void __assert_monotonicity (size_t *a, int n, const char *f, int line)
+{
+    size_t last = 0;
+    int i;
+    for (i = 0; i < n; ++i) {
+        if (a[i] <= last) {
+            threadscan_diagnostic("Error at %s:%d\n", f, line);
+            threadscan_fatal("The list is not monotonic at position %d "
+                             "out of %d (%llu, last: %llu)\n",
+                             i, n, a[i], last);
+        }
+        last = a[i];
+    }
+}
+#else
+#define assert_monotonicity(a, b) /* nothing. */
+#endif
+
 // For signaling the garbage collector with work to do.
 static pthread_mutex_t g_gc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_gc_cond = PTHREAD_COND_INITIALIZER;
@@ -53,9 +74,108 @@ static size_t read_from_child (queue_t *commq)
     return threadscan_queue_pop(commq);
 }
 
+static void generate_minimap (gc_data_t *gc_data)
+{
+    size_t i;
+
+    assert(gc_data);
+    assert(gc_data->addrs);
+    assert(gc_data->minimap);
+
+    gc_data->n_minimap = 0;
+    for (i = 0; i < gc_data->n_addrs; i += (PAGESIZE / sizeof(size_t))) {
+        gc_data->minimap[gc_data->n_minimap] = gc_data->addrs[i];
+        ++gc_data->n_minimap;
+    }
+}
+
+static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
+{
+    gc_data_t *ret, *tmp;
+    size_t n_addrs = 0;
+    int list_count = 0;
+
+    tmp = data_list;
+    do {
+        n_addrs += tmp->n_addrs;
+        ++list_count;
+    } while ((tmp = tmp->next));
+    //threadscan_diagnostic("List of %d dealies.\n", list_count);
+
+    assert(n_addrs != 0);
+
+    // How many pages of memory are needed to store this many addresses?
+    size_t pages_of_addrs = ((n_addrs * sizeof(size_t))
+                             + PAGE_SIZE - sizeof(size_t)) / PAGE_SIZE;
+    // How many pages of memory are needed to store the minimap?
+    size_t pages_of_minimap = ((pages_of_addrs * sizeof(size_t))
+                               + PAGE_SIZE - sizeof(size_t)) / PAGE_SIZE;
+    // How many pages are needed to store the allocated size and reference
+    // count arrays?
+    size_t pages_of_count = ((n_addrs * sizeof(int))
+                             + PAGE_SIZE - sizeof(int)) / PAGE_SIZE;
+    // Total pages needed is the number of pages for the addresses, plus the
+    // number of pages needed for the minimap, plus one (for the gc_data_t).
+    char *p =
+        (char*)threadscan_alloc_mmap((pages_of_addrs     // addr array.
+                                      + pages_of_minimap // minimap.
+                                      + pages_of_count   // ref count.
+                                      + pages_of_count   // alloc size.
+                                      + 1)               // struct page.
+                                     * PAGE_SIZE);
+
+    // Perform assignments as offsets into the block that was bulk-allocated.
+    size_t offset = 0;
+    ret = (gc_data_t*)p;
+    offset += PAGE_SIZE;
+
+    ret->addrs = (size_t*)(p + offset);
+    offset += pages_of_addrs * PAGE_SIZE;
+
+    ret->minimap = (size_t*)(p + offset);
+    offset += pages_of_minimap * PAGE_SIZE;
+
+    ret->refs = (int*)(p + offset);
+    offset += pages_of_count * PAGE_SIZE;
+
+    ret->alloc_sz = (int*)(p + offset);
+
+    ret->n_addrs = n_addrs;
+
+    // Copy the addresses over.
+    char *dest = (char*)ret->addrs;
+    tmp = data_list;
+    do {
+        memcpy(dest, tmp->addrs, tmp->n_addrs * sizeof(size_t));
+        dest += tmp->n_addrs * sizeof(size_t);
+    } while ((tmp = tmp->next));
+
+    // Sort the addresses and generate the minimap for the scanner.
+    threadscan_util_sort(ret->addrs, ret->n_addrs);
+    assert_monotonicity(ret->addrs, ret->n_addrs);
+    generate_minimap(ret);
+
+    // Get the size of each malloc'd block.
+    int i;
+    for (i = 0; i < ret->n_addrs; ++i) {
+        assert(ret->alloc_sz[i] == 0);
+        ret->alloc_sz[i] = malloc_usable_size((void*)ret->addrs[i]);
+        assert(ret->alloc_sz[i] > 0);
+    }
+
+#ifndef NDEBUG
+    for (i = 0; i < ret->n_addrs; ++i) {
+        assert(ret->refs[i] == 0);
+    }
+#endif
+
+    return ret;
+}
+
 static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 {
     static int fork_count = 0;
+    gc_data_t *working_data;
     int sig_count;
 
     // Include the addrs from the last collection iteration.
@@ -65,6 +185,8 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         tmp->next = gc_data;
         gc_data = g_uncollected_data;
     }
+
+    working_data = aggregate_gc_data(gc_data);
 
     // Send out signals.  When everybody is waiting at the line, fork the
     // process for the snapshot.
@@ -78,7 +200,7 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     } else if (child_pid == 0) {
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
-        threadscan_child(gc_data, commq);
+        threadscan_child(working_data, commq);
         exit(0);
     }
 
@@ -124,7 +246,12 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
         gc_data = tmp;
     }
+    threadscan_alloc_munmap(working_data); // FIXME: ...
 }
+
+/****************************************************************************/
+/*                            Exported functions                            */
+/****************************************************************************/
 
 /**
  * Wait for the GC routine to complete its snapshot.
