@@ -43,4 +43,9 @@ void forkgc_initiate_collection (gc_data_t *gc_data);
  */
 void *forkgc_thread (void *ignored);
 
+/**
+ * Print program statistics to stdout.
+ */
+void forkgc_print_statistics ();
+
 #endif

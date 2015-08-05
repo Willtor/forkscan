@@ -198,8 +198,11 @@ struct main_args_t {
 
 static void *main_thunk (void *arg)
 {
+    int ret;
     main_args_t *main_args = (main_args_t*)arg;
-    exit(orig_main(main_args->argc, main_args->argv, main_args->env));
+    ret = orig_main(main_args->argc, main_args->argv, main_args->env);
+    forkgc_print_statistics();
+    exit(ret);
 }
 
 static int main_replacement (int argc, char **argv, char **env)

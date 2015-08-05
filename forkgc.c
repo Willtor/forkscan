@@ -31,6 +31,7 @@ THE SOFTWARE.
 #include <pthread.h>
 #include "queue.h"
 #include <setjmp.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -67,7 +68,7 @@ static gc_data_t *g_gc_data, *g_uncollected_data;
 static volatile int g_received_signal;
 static volatile size_t g_cleanup_counter;
 static int g_gc_waiting;
-
+static size_t g_scan_max;
 static pid_t child_pid;
 
 typedef struct unref_config_t unref_config_t;
@@ -183,24 +184,21 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     // Start the threads.
     for (i = 0; i < thread_count; ++i) {
         address_range((void*)&ara[i]);
-        /*
-        extern int orig_pthread_create (pthread_t *, const pthread_attr_t *,
-                                        void *(*) (void *), void *);
+        // FIXME: orig_* functions should get passed in.
+        extern int (*orig_pthread_create) (pthread_t *, const pthread_attr_t *,
+                                           void *(*) (void *), void *);
         if (orig_pthread_create(&threads[i], NULL, address_range, &ara[i])) {
             threadscan_fatal("Child was unable to create a thread.\n");
         }
-        */
     }
 
-    /*
     // Wait for threads to return.
     for (i = 0; i < thread_count; ++i) {
-        extern int orig_pthread_join (pthread_t, void **);
+        extern int (*orig_pthread_join) (pthread_t, void **);
         if (orig_pthread_join(threads[i], NULL)) {
             threadscan_fatal("Child failed to join a thread.\n");
         }
     }
-    */
 
     // Compact the list.
     int write_position = 0;
@@ -248,7 +246,6 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
         n_addrs += tmp->n_addrs;
         ++list_count;
     } while ((tmp = tmp->next));
-    //threadscan_diagnostic("List of %d dealies.\n", list_count);
 
     assert(n_addrs != 0);
 
@@ -361,7 +358,6 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 
     ++g_cleanup_counter;
     close(pipefd[PIPE_WRITE]);
-    threadscan_diagnostic("Fork count: %d\n", g_cleanup_counter);
 
     // Wait for the child to complete the scan.
     size_t bytes_scanned;
@@ -369,20 +365,15 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
                                sizeof(size_t))) {
         threadscan_fatal("Failed to read from child.\n");
     }
-    threadscan_diagnostic("Scanned %llu KB.\n", bytes_scanned / 1024);
+    if (bytes_scanned > g_scan_max) g_scan_max = bytes_scanned;
 
     // Identify unreferenced memory and free it.
     int savings;
     int iters = 0;
-    int start_count = working_data->n_addrs;
     do {
         ++iters;
         savings = find_unreferenced_nodes(working_data, commq);
     } while (savings > 0 && working_data->n_addrs > 0);
-    threadscan_diagnostic("Free'd %d nodes (%d remain, %d iters).\n",
-                          start_count - working_data->n_addrs,
-                          working_data->n_addrs,
-                          iters);
 
     gc_data->n_addrs = 0;
     int i;
@@ -485,6 +476,31 @@ void *forkgc_thread (void *ignored)
     }
 
     return NULL;
+}
+
+/**
+ * Print program statistics to stdout.
+ */
+void forkgc_print_statistics ()
+{
+    char statm[256];
+    size_t bytes_read;
+    FILE *fp;
+
+    fp = fopen("/proc/self/statm", "r");
+    if (NULL == fp) {
+        threadscan_fatal("Unable to open /proc/self/statm.\n");
+    }
+    bytes_read = fread(statm, 1, 255, fp);
+    statm[statm[bytes_read - 1] == '\n'
+          ? bytes_read - 1
+          : bytes_read
+          ] = '\0';
+    fclose(fp);
+
+    printf("statm: %s\n", statm);
+    printf("fork-count: %zu\n", g_cleanup_counter);
+    printf("scan-max: %zu\n", g_scan_max);
 }
 
 __attribute__((destructor))
