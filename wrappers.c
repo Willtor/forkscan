@@ -201,7 +201,9 @@ static void *main_thunk (void *arg)
     int ret;
     main_args_t *main_args = (main_args_t*)arg;
     ret = orig_main(main_args->argc, main_args->argv, main_args->env);
-    forkgc_print_statistics();
+    if (g_forkgc_report_statistics) {
+        forkgc_print_statistics();
+    }
     exit(ret);
 }
 

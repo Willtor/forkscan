@@ -29,10 +29,15 @@ THE SOFTWARE.
 
 static const char env_ptrs_per_thread[] = "THREADSCAN_PTRS_PER_THREAD";
 
+static const char env_report_statistics[] = "FORKGC_REPORT_STATS";
+
 // # of ptrs a thread can "save up" before initiating a collection run.
 // The number of pointers per thread should be a power of 2 because we use
 // this number to do masking (to avoid the costly modulo operation).
 int g_threadscan_ptrs_per_thread;
+
+// Whether to report application statistics before the program terminates.
+int g_forkgc_report_statistics;
 
 /** Parse an integer from a string.  0 if val is NULL.
  */
@@ -52,8 +57,8 @@ static void env_init ()
     // think in terms of small powers of 2.
     {
         int ptrs_per_thread;
-        // Default is ~16000 pointers per thread, derived from trial data.
-        ptrs_per_thread = get_int(getenv(env_ptrs_per_thread), 4);
+        // Default is ~32000 pointers per thread, derived from trial data.
+        ptrs_per_thread = get_int(getenv(env_ptrs_per_thread), 32);
         ptrs_per_thread *= 1024;
 
         // Round up to power of 2 bit trick:
@@ -83,5 +88,12 @@ static void env_init ()
         }
 
         g_threadscan_ptrs_per_thread = ptrs_per_thread;
+    }
+
+    {
+        int report_statistics;
+        // Whether to report application statistics before the program exits.
+        report_statistics = get_int(getenv(env_report_statistics), 0);
+        if (report_statistics != 0) g_forkgc_report_statistics = 1;
     }
 }

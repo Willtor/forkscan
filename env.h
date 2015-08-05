@@ -30,4 +30,7 @@ THE SOFTWARE.
 // this number to do masking (to avoid the costly modulo operation).
 extern int g_threadscan_ptrs_per_thread;
 
+// Whether to report application statistics before the program terminates.
+extern int g_forkgc_report_statistics;
+
 #endif // !defined _ENV_H_
