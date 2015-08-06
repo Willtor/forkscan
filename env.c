@@ -24,7 +24,7 @@ THE SOFTWARE.
 #include <stdlib.h>
 #include "util.h"
 
-#define MAX_PTRS_PER_THREAD (256 * 1024)
+#define MAX_PTRS_PER_THREAD (1024 * 1024)
 #define MIN_PTRS_PER_THREAD 1024
 
 static const char env_ptrs_per_thread[] = "THREADSCAN_PTRS_PER_THREAD";

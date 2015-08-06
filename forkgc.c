@@ -150,7 +150,7 @@ static void *address_range (void *arg)
 }
 
 #define MAX_THREADS 80
-#define ADDRS_PER_THREAD (1000 * 1000)
+#define ADDRS_PER_THREAD (128 * 1024)
 
 static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
 {
@@ -169,9 +169,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     // Configure threads.
     thread_count = (gc_data->n_addrs / ADDRS_PER_THREAD) + 1;
     assert(thread_count > 0);
-    if (thread_count > MAX_THREADS) {
-        thread_count = MAX_THREADS;
-    }
+    if (thread_count > MAX_THREADS) thread_count = MAX_THREADS;
     addrs_per_thread = gc_data->n_addrs / thread_count;
 
     for (i = 0; i < thread_count; ++i) {
@@ -183,7 +181,6 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
 
     // Start the threads.
     for (i = 0; i < thread_count; ++i) {
-        address_range((void*)&ara[i]);
         // FIXME: orig_* functions should get passed in.
         extern int (*orig_pthread_create) (pthread_t *, const pthread_attr_t *,
                                            void *(*) (void *), void *);
