@@ -26,6 +26,7 @@ THE SOFTWARE.
 #include "child.h"
 #include <fcntl.h>
 #include "forkgc.h"
+#include <jemalloc/jemalloc.h>
 #include <malloc.h>
 #include "proc.h"
 #include <pthread.h>
@@ -34,6 +35,7 @@ THE SOFTWARE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #define PIPE_READ 0
@@ -69,6 +71,7 @@ static volatile int g_received_signal;
 static volatile size_t g_cleanup_counter;
 static int g_gc_waiting;
 static size_t g_scan_max;
+static double g_total_fork_time;
 static pid_t child_pid;
 
 typedef struct unref_config_t unref_config_t;
@@ -86,7 +89,8 @@ static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
     size_t addr = addrs[n];
     assert(addr & 1);
     size_t *p = (size_t*)PTR_MASK(addr);
-    int elements = unref_config->gc_data->alloc_sz[n] / sizeof(size_t);
+    //int elements = unref_config->gc_data->alloc_sz[n] / sizeof(size_t);
+    int elements = (int)(je_malloc_usable_size(p) / sizeof(size_t));
 
     for (i = 0; i < elements; ++i) {
         size_t deep_addr = PTR_MASK(p[i]);
@@ -120,7 +124,7 @@ static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
             }
         }
     }
-    free(p); // Done with it!  Bam!
+    je_free(p); // Done with it!  Bam!
 }
 
 typedef struct address_range_arg_t address_range_arg_t;
@@ -149,7 +153,7 @@ static void *address_range (void *arg)
     return NULL;
 }
 
-#define MAX_THREADS 80
+#define MAX_THREADS 1
 #define ADDRS_PER_THREAD (128 * 1024)
 
 static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
@@ -178,6 +182,8 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
         ara[i].range_end = (i + 1) * addrs_per_thread;
     }
     ara[thread_count - 1].range_end = gc_data->n_addrs;
+
+    threadscan_diagnostic("Going to create %d threads.\n", thread_count);
 
     // Start the threads.
     for (i = 0; i < thread_count; ++i) {
@@ -301,7 +307,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     int i;
     for (i = 0; i < ret->n_addrs; ++i) {
         assert(ret->alloc_sz[i] == 0);
-        ret->alloc_sz[i] = malloc_usable_size((void*)ret->addrs[i]);
+        ret->alloc_sz[i] = 0; //je_malloc_usable_size((void*)ret->addrs[i]);
         assert(ret->alloc_sz[i] > 0);
     }
 
@@ -338,8 +344,12 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     // Send out signals.  When everybody is waiting at the line, fork the
     // process for the snapshot.
     g_received_signal = 0;
+    struct timeval t1, t2;
+    double elapsed_time;
+    gettimeofday(&t1, NULL);
     sig_count = threadscan_proc_signal(SIGTHREADSCAN);
     while (g_received_signal < sig_count) pthread_yield();
+    threadscan_diagnostic("Start fork.\n");
     child_pid = fork();
 
     if (child_pid == -1) {
@@ -355,6 +365,11 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 
     ++g_cleanup_counter;
     close(pipefd[PIPE_WRITE]);
+    gettimeofday(&t2, NULL);
+    elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+    elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+    g_total_fork_time += elapsed_time;
+    threadscan_diagnostic("End fork.\n");
 
     // Wait for the child to complete the scan.
     size_t bytes_scanned;
@@ -363,6 +378,7 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         threadscan_fatal("Failed to read from child.\n");
     }
     if (bytes_scanned > g_scan_max) g_scan_max = bytes_scanned;
+    threadscan_diagnostic("End scan.\n");
 
     // Identify unreferenced memory and free it.
     int savings;
@@ -400,6 +416,7 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
         gc_data = tmp;
     }
+    threadscan_diagnostic("End sweep.\n");
 }
 
 /****************************************************************************/
@@ -498,6 +515,9 @@ void forkgc_print_statistics ()
     printf("statm: %s\n", statm);
     printf("fork-count: %zu\n", g_cleanup_counter);
     printf("scan-max: %zu\n", g_scan_max);
+    printf("ave-fork-time: %d\n",
+           g_cleanup_counter == 0 ? 0
+           : ((int)(g_total_fork_time / g_cleanup_counter)));
 }
 
 __attribute__((destructor))

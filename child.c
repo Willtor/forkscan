@@ -87,8 +87,7 @@ static void do_search (size_t *mem, size_t range_size, gc_data_t *gc_data)
     size_t min_ptr, max_ptr;
 
     min_ptr = gc_data->addrs[0];
-    max_ptr = gc_data->addrs[gc_data->n_addrs - 1]
-        + gc_data->alloc_sz[gc_data->n_addrs - 1] - sizeof(size_t);
+    max_ptr = gc_data->addrs[gc_data->n_addrs - 1];
 
     assert(min_ptr <= max_ptr);
 
@@ -97,6 +96,7 @@ static void do_search (size_t *mem, size_t range_size, gc_data_t *gc_data)
         // PTR_MASK catches pointers that have been hidden through overloading
         // the two low-order bits.
 
+        // FIXME: Makes it too fast!
         if (cmp < min_ptr || cmp > max_ptr) continue; // Out-of-range.
 
         // Level 1 search: Find the page the address would be on.

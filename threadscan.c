@@ -26,6 +26,7 @@ THE SOFTWARE.
 #include "child.h"
 #include "env.h"
 #include "forkgc.h"
+#include <jemalloc/jemalloc.h>
 #include <malloc.h>
 #include "proc.h"
 #include <pthread.h>
@@ -152,7 +153,7 @@ void *automalloc (size_t size)
 {
     void *p;
     g_in_malloc = 1;
-    p = malloc(size);
+    p = je_malloc(size);
     g_in_malloc = 0;
 
     if (g_waiting_to_fork) {
