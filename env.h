@@ -24,6 +24,7 @@ THE SOFTWARE.
 #define _ENV_H_ 1
 
 #define MAX_THREAD_COUNT 256
+#define MAX_SWEEPER_THREADS 80
 
 // # of ptrs a thread can "save up" before initiating a collection run.
 // The number of pointers per thread should be a power of 2 because we use
@@ -32,5 +33,8 @@ extern int g_threadscan_ptrs_per_thread;
 
 // Whether to report application statistics before the program terminates.
 extern int g_forkgc_report_statistics;
+
+// How many sweeper threads get spun up by the garbage collector.
+extern int g_forkgc_sweeper_thread_count;
 
 #endif // !defined _ENV_H_

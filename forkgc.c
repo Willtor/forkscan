@@ -24,6 +24,7 @@ THE SOFTWARE.
 #include "alloc.h"
 #include <assert.h>
 #include "child.h"
+#include "env.h"
 #include <fcntl.h>
 #include "forkgc.h"
 #include <jemalloc/jemalloc.h>
@@ -37,8 +38,6 @@ THE SOFTWARE.
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
-
-#define MAX_SWEEPER_THREADS 1
 
 #define PIPE_READ 0
 #define PIPE_WRITE 1
@@ -514,7 +513,7 @@ void *forkgc_thread (void *ignored)
     extern int (*orig_pthread_create) (pthread_t *, const pthread_attr_t *,
                                        void *(*) (void *), void *);
     int i;
-    for (i = 0; i < MAX_SWEEPER_THREADS; ++i) {
+    for (i = 0; i < g_forkgc_sweeper_thread_count; ++i) {
         pthread_t tid;
         if (0 != orig_pthread_create(&tid, NULL, sweeper_thread, NULL)) {
             threadscan_fatal("Unable to create sweeper thread.\n");

@@ -24,12 +24,16 @@ THE SOFTWARE.
 #include <stdlib.h>
 #include "util.h"
 
+#define DEFAULT_SWEEPER_THREADS 8
+
 #define MAX_PTRS_PER_THREAD (1024 * 1024)
 #define MIN_PTRS_PER_THREAD 1024
 
 static const char env_ptrs_per_thread[] = "THREADSCAN_PTRS_PER_THREAD";
 
 static const char env_report_statistics[] = "FORKGC_REPORT_STATS";
+
+static const char env_sweeper_threads[] = "FORKGC_SWEEPER_THREAD_COUNT";
 
 // # of ptrs a thread can "save up" before initiating a collection run.
 // The number of pointers per thread should be a power of 2 because we use
@@ -38,6 +42,9 @@ int g_threadscan_ptrs_per_thread;
 
 // Whether to report application statistics before the program terminates.
 int g_forkgc_report_statistics;
+
+// How many sweeper threads get spun up by the garbage collector.
+int g_forkgc_sweeper_thread_count;
 
 /** Parse an integer from a string.  0 if val is NULL.
  */
@@ -95,5 +102,18 @@ static void env_init ()
         // Whether to report application statistics before the program exits.
         report_statistics = get_int(getenv(env_report_statistics), 0);
         if (report_statistics != 0) g_forkgc_report_statistics = 1;
+    }
+
+    {
+        int sweeper_threads;
+        sweeper_threads = get_int(getenv(env_sweeper_threads),
+                                  DEFAULT_SWEEPER_THREADS);
+        if (sweeper_threads <= 0) {
+            sweeper_threads = 1;
+        }
+        if (sweeper_threads > MAX_SWEEPER_THREADS) {
+            sweeper_threads = MAX_SWEEPER_THREADS;
+        }
+        g_forkgc_sweeper_thread_count = sweeper_threads;
     }
 }
