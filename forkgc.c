@@ -183,8 +183,6 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     }
     ara[thread_count - 1].range_end = gc_data->n_addrs;
 
-    threadscan_diagnostic("Going to create %d threads.\n", thread_count);
-
     // Start the threads.
     for (i = 0; i < thread_count; ++i) {
         // FIXME: orig_* functions should get passed in.
@@ -205,22 +203,27 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
 
     // Compact the list.
     int write_position = 0;
-    int savings = 0;
+    int unfinished = 0;
     for (i = 0; i < gc_data->n_addrs; ++i) {
-        if (gc_data->addrs[i] & 1) ++savings;
-        else {
+        if ( !(gc_data->addrs[i] & 1)) {
             // Address doesn't have its low bit set: still alive.
             if (write_position != i) {
                 gc_data->addrs[write_position] = gc_data->addrs[i];
                 gc_data->refs[write_position] = gc_data->refs[i];
                 gc_data->alloc_sz[write_position] = gc_data->alloc_sz[i];
             }
+            if (gc_data->refs[write_position] == 0) {
+                // Node didn't get free'd because the search depth was
+                // exceeded.  We'll have to make another pass over the
+                // nodes.
+                ++unfinished;
+            }
             ++write_position;
         }
     }
     gc_data->n_addrs = write_position;
 
-    return savings;
+    return unfinished;
 }
 
 static void generate_minimap (gc_data_t *gc_data)
@@ -308,7 +311,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     for (i = 0; i < ret->n_addrs; ++i) {
         assert(ret->alloc_sz[i] == 0);
         ret->alloc_sz[i] = 0; //je_malloc_usable_size((void*)ret->addrs[i]);
-        assert(ret->alloc_sz[i] > 0);
+        //assert(ret->alloc_sz[i] > 0);
     }
 
 #ifndef NDEBUG
@@ -332,6 +335,7 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         while (tmp->next) tmp = tmp->next;
         tmp->next = gc_data;
         gc_data = g_uncollected_data;
+        g_uncollected_data = NULL;
     }
 
     working_data = aggregate_gc_data(gc_data);
@@ -349,7 +353,6 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     gettimeofday(&t1, NULL);
     sig_count = threadscan_proc_signal(SIGTHREADSCAN);
     while (g_received_signal < sig_count) pthread_yield();
-    threadscan_diagnostic("Start fork.\n");
     child_pid = fork();
 
     if (child_pid == -1) {
@@ -369,7 +372,6 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
     elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
     g_total_fork_time += elapsed_time;
-    threadscan_diagnostic("End fork.\n");
 
     // Wait for the child to complete the scan.
     size_t bytes_scanned;
@@ -378,15 +380,14 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         threadscan_fatal("Failed to read from child.\n");
     }
     if (bytes_scanned > g_scan_max) g_scan_max = bytes_scanned;
-    threadscan_diagnostic("End scan.\n");
 
     // Identify unreferenced memory and free it.
-    int savings;
+    int unfinished;
     int iters = 0;
     do {
         ++iters;
-        savings = find_unreferenced_nodes(working_data, commq);
-    } while (savings > 0 && working_data->n_addrs > 0);
+        unfinished = find_unreferenced_nodes(working_data, commq);
+    } while (unfinished > 0);
 
     gc_data->n_addrs = 0;
     int i;
@@ -416,7 +417,6 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
         threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
         gc_data = tmp;
     }
-    threadscan_diagnostic("End sweep.\n");
 }
 
 /****************************************************************************/
