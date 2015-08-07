@@ -38,6 +38,8 @@ THE SOFTWARE.
 #include <sys/time.h>
 #include <unistd.h>
 
+#define MAX_SWEEPER_THREADS 1
+
 #define PIPE_READ 0
 #define PIPE_WRITE 1
 
@@ -62,6 +64,21 @@ static void __assert_monotonicity (size_t *a, int n, const char *f, int line)
 #define assert_monotonicity(a, b) /* nothing. */
 #endif
 
+typedef struct unref_config_t unref_config_t;
+typedef struct sweeper_work_t sweeper_work_t;
+
+struct unref_config_t
+{
+    gc_data_t *gc_data;
+    size_t min_val, max_val;
+};
+
+struct sweeper_work_t
+{
+    unref_config_t *unref_config;
+    int range_begin, range_end;
+};
+
 // For signaling the garbage collector with work to do.
 static pthread_mutex_t g_gc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_gc_cond = PTHREAD_COND_INITIALIZER;
@@ -69,18 +86,20 @@ static pthread_cond_t g_gc_cond = PTHREAD_COND_INITIALIZER;
 static gc_data_t *g_gc_data, *g_uncollected_data;
 static volatile int g_received_signal;
 static volatile size_t g_cleanup_counter;
-static int g_gc_waiting;
+static enum { GC_NOT_WAITING,
+              GC_WAITING_FOR_WORK, 
+              GC_WAITING_FOR_SWEEPERS,
+              GC_DONT_WAIT_FOR_SWEEPERS } g_gc_waiting = GC_WAITING_FOR_WORK;
 static size_t g_scan_max;
 static double g_total_fork_time;
 static pid_t child_pid;
 
-typedef struct unref_config_t unref_config_t;
-
-struct unref_config_t
-{
-    gc_data_t *gc_data;
-    size_t min_val, max_val;
-};
+static pthread_mutex_t g_sweeper_mutex;
+static pthread_cond_t g_sweeper_cond;
+static volatile int g_sweepers_sleeping;
+static volatile int g_sweepers_working;
+static volatile int g_sweepers_remaining;
+static sweeper_work_t g_sweeper_work[MAX_SWEEPER_THREADS];
 
 static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
 {
@@ -127,39 +146,27 @@ static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
     je_free(p); // Done with it!  Bam!
 }
 
-typedef struct address_range_arg_t address_range_arg_t;
-
-struct address_range_arg_t
+static void *address_range (sweeper_work_t *work)
 {
-    unref_config_t *unref_config;
-    int range_begin, range_end;
-};
-
-static void *address_range (void *arg)
-{
-    address_range_arg_t *in = (address_range_arg_t*)arg;
-    gc_data_t *gc_data = in->unref_config->gc_data;
+    gc_data_t *gc_data = work->unref_config->gc_data;
     int i;
-    for (i = in->range_begin; i < in->range_end; ++i) {
+    for (i = work->range_begin; i < work->range_end; ++i) {
         size_t addr = gc_data->addrs[i];
         assert(addr != 0);
         assert(gc_data->refs[i] >= 0);
         if (0 == (addr & 1) && gc_data->refs[i] == 0) {
             if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
-                unref_addr(in->unref_config, i, 30);
+                unref_addr(work->unref_config, i, 30);
             }
         }
     }
     return NULL;
 }
 
-#define MAX_THREADS 1
 #define ADDRS_PER_THREAD (128 * 1024)
 
 static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
 {
-    pthread_t threads[MAX_THREADS];
-    address_range_arg_t ara[MAX_THREADS];
     unref_config_t unref_config;
     int thread_count;
     int addrs_per_thread;
@@ -173,38 +180,42 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     // Configure threads.
     thread_count = (gc_data->n_addrs / ADDRS_PER_THREAD) + 1;
     assert(thread_count > 0);
-    if (thread_count > MAX_THREADS) thread_count = MAX_THREADS;
+    if (thread_count > g_sweepers_sleeping) thread_count = g_sweepers_sleeping;
     addrs_per_thread = gc_data->n_addrs / thread_count;
 
     for (i = 0; i < thread_count; ++i) {
-        ara[i].unref_config = &unref_config;
-        ara[i].range_begin = i * addrs_per_thread;
-        ara[i].range_end = (i + 1) * addrs_per_thread;
+        g_sweeper_work[i].unref_config = &unref_config;
+        g_sweeper_work[i].range_begin = i * addrs_per_thread;
+        g_sweeper_work[i].range_end = (i + 1) * addrs_per_thread;
     }
-    ara[thread_count - 1].range_end = gc_data->n_addrs;
+    g_sweeper_work[thread_count - 1].range_end = gc_data->n_addrs;
 
-    // Start the threads.
+    // Request thread_count sweepers to perform the scan.
+    g_sweepers_working = 0;
+    g_sweepers_remaining = thread_count;
     for (i = 0; i < thread_count; ++i) {
-        // FIXME: orig_* functions should get passed in.
-        extern int (*orig_pthread_create) (pthread_t *, const pthread_attr_t *,
-                                           void *(*) (void *), void *);
-        if (orig_pthread_create(&threads[i], NULL, address_range, &ara[i])) {
-            threadscan_fatal("Child was unable to create a thread.\n");
-        }
+        // Don't need to grab the mutex in order to signal sweepers.  We know
+        // that at least thread_count of them are waiting.
+        pthread_cond_signal(&g_sweeper_cond);
     }
 
-    // Wait for threads to return.
-    for (i = 0; i < thread_count; ++i) {
-        extern int (*orig_pthread_join) (pthread_t, void **);
-        if (orig_pthread_join(threads[i], NULL)) {
-            threadscan_fatal("Child failed to join a thread.\n");
-        }
+    // Wait for sweepers to complete.
+    pthread_mutex_lock(&g_gc_mutex);
+    if (g_gc_waiting == GC_DONT_WAIT_FOR_SWEEPERS) {
+        // Wow!  Those sweepers finished before we even got here!  Nothing to
+        // wait for.
+    } else {
+        g_gc_waiting = GC_WAITING_FOR_SWEEPERS;
+        pthread_cond_wait(&g_gc_cond, &g_gc_mutex);
     }
+    pthread_mutex_unlock(&g_gc_mutex);
 
     // Compact the list.
     int write_position = 0;
     int unfinished = 0;
+    int saved = 0;
     for (i = 0; i < gc_data->n_addrs; ++i) {
+        if (gc_data->addrs[i] & 1) ++saved;
         if ( !(gc_data->addrs[i] & 1)) {
             // Address doesn't have its low bit set: still alive.
             if (write_position != i) {
@@ -224,6 +235,38 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     gc_data->n_addrs = write_position;
 
     return unfinished;
+}
+
+static void *sweeper_thread (void *arg)
+{
+    while ((1)) {
+        // Wait for sweeping phase.
+        pthread_mutex_lock(&g_sweeper_mutex);
+        ++g_sweepers_sleeping;
+        pthread_cond_wait(&g_sweeper_cond, &g_sweeper_mutex);
+        --g_sweepers_sleeping;
+        pthread_mutex_unlock(&g_sweeper_mutex);
+
+        // Perform sweep.
+        int id = __sync_fetch_and_add(&g_sweepers_working, 1);
+        address_range(&g_sweeper_work[id]);
+        int done = __sync_fetch_and_sub(&g_sweepers_remaining, 1) - 1;
+
+        // See if we're the last one.
+        if (done == 0) {
+            // Last one out.  Signal the GC thread.
+            pthread_mutex_lock(&g_gc_mutex);
+            assert(g_gc_waiting != GC_WAITING_FOR_WORK);
+            if (g_gc_waiting == GC_WAITING_FOR_SWEEPERS) {
+                pthread_cond_signal(&g_gc_cond);
+            } else {
+                g_gc_waiting = GC_DONT_WAIT_FOR_SWEEPERS;
+            }
+            pthread_mutex_unlock(&g_gc_mutex);
+        }
+    }
+    threadscan_fatal("Internal error: Unreachable code.\n");
+    return NULL;
 }
 
 static void generate_minimap (gc_data_t *gc_data)
@@ -446,7 +489,7 @@ void forkgc_initiate_collection (gc_data_t *gc_data)
     pthread_mutex_lock(&g_gc_mutex);
     gc_data->next = g_gc_data;
     g_gc_data = gc_data;
-    if (g_gc_waiting != 0) {
+    if (g_gc_waiting == GC_WAITING_FOR_WORK) {
         pthread_cond_signal(&g_gc_cond);
     }
     pthread_mutex_unlock(&g_gc_mutex);
@@ -464,14 +507,28 @@ void *forkgc_thread (void *ignored)
     queue_t *commq = (queue_t*)buffer;
     threadscan_queue_init(commq, (size_t*)&buffer[PAGE_SIZE], PAGE_SIZE);
 
+    // Start thread pool.
+    pthread_mutex_init(&g_sweeper_mutex, NULL);
+    pthread_cond_init(&g_sweeper_cond, NULL);
+    // FIXME: orig_* functions should get passed in.
+    extern int (*orig_pthread_create) (pthread_t *, const pthread_attr_t *,
+                                       void *(*) (void *), void *);
+    int i;
+    for (i = 0; i < MAX_SWEEPER_THREADS; ++i) {
+        pthread_t tid;
+        if (0 != orig_pthread_create(&tid, NULL, sweeper_thread, NULL)) {
+            threadscan_fatal("Unable to create sweeper thread.\n");
+        }
+    }
+
     while ((1)) {
         pthread_mutex_lock(&g_gc_mutex);
         if (NULL == g_gc_data) {
             // Wait for somebody to come up with a set of addresses for us to
             // collect.
-            g_gc_waiting = 1;
+            g_gc_waiting = GC_WAITING_FOR_WORK;
             pthread_cond_wait(&g_gc_cond, &g_gc_mutex);
-            g_gc_waiting = 0;
+            g_gc_waiting = GC_NOT_WAITING;
         }
 
         assert(g_gc_data);
