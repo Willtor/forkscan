@@ -109,6 +109,7 @@ static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
     size_t *p = (size_t*)PTR_MASK(addr);
     //int elements = unref_config->gc_data->alloc_sz[n] / sizeof(size_t);
     int elements = (int)(je_malloc_usable_size(p) / sizeof(size_t));
+    //int elements = 32;
 
     for (i = 0; i < elements; ++i) {
         size_t deep_addr = PTR_MASK(p[i]);
@@ -142,7 +143,7 @@ static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
             }
         }
     }
-    je_free(p); // Done with it!  Bam!
+    // je_free(p); // Done with it!  Bam! ALEX
 }
 
 static void *address_range (sweeper_work_t *work)
@@ -157,6 +158,12 @@ static void *address_range (sweeper_work_t *work)
             if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
                 unref_addr(work->unref_config, i, 30);
             }
+        }
+    }
+    for (i = work->range_begin; i < work->range_end; ++i) {
+        if (gc_data->addrs[i] & 1) {
+            ((size_t*)PTR_MASK(gc_data->addrs[i]))[0] = 0;
+            //je_free((void*)PTR_MASK(gc_data->addrs[i]));
         }
     }
     return NULL;
@@ -230,10 +237,23 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
             }
             ++write_position;
         }
+
+        /*
+        if (gc_data->refs[i] == 0) {
+            je_free((void*)PTR_MASK(gc_data->addrs[i]));
+        } else {
+            if (write_position != i) {
+                gc_data->addrs[write_position] = gc_data->addrs[i];
+                gc_data->refs[write_position] = gc_data->refs[i];
+                gc_data->alloc_sz[write_position] = gc_data->alloc_sz[i];
+            }
+            ++write_position;
+        }
+        */
     }
     gc_data->n_addrs = write_position;
 
-    return unfinished;
+    return 0; // unfinished; // ALEX
 }
 
 static void *sweeper_thread (void *arg)
