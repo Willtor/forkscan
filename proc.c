@@ -216,6 +216,7 @@ int threadscan_proc_signal_all_except (int sig, thread_data_t *except)
 
     // Yay!  C doesn't have lambdas!  So this is way uglier and more fragile
     // than it needs to be!  Thanks, C.
+    // FIXME: Rewrite with iteration function.
     FOREACH_IN_THREAD_LIST(td, &thread_list)
         assert(td);
         if (td != except && td->is_active) {

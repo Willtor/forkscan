@@ -148,13 +148,33 @@ void threadscan_collect (void *ptr)
 /*                            Bystander threads.                            */
 /****************************************************************************/
 
+static void free_ptrs (thread_data_t *td)
+{
+    int i;
+
+    assert(td);
+    for (i = 0; i < 2; ++i) {
+        free_t *head = td->free_list;
+        if (NULL == head) return;
+        while (!BCAS(&td->free_list, head, head->next)) {
+            head = td->free_list;
+            assert(NULL != head);
+        }
+        head->next = NULL;
+        FREE(head);
+    }
+}
+
 __attribute__((visibility("default")))
 void *automalloc (size_t size)
 {
     void *p;
     g_in_malloc = 1;
-    p = je_malloc(size);
+    p = MALLOC(size);
     g_in_malloc = 0;
+
+    // Free a couple pointers, if we have them.
+    free_ptrs(threadscan_thread_get_td());
 
     if (g_waiting_to_fork) {
         // Sadly, TC-Malloc has a deadlock bug when interacting with fork().

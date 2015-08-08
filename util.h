@@ -31,6 +31,10 @@ THE SOFTWARE.
 /*                         Defines, typedefs, etc.                          */
 /****************************************************************************/
 
+#define MALLOC(sz) je_malloc(sz)
+#define FREE(ptr) je_free(ptr)
+#define MALLOC_USABLE_SIZE(ptr) je_malloc_usable_size(ptr)
+
 #define FOREACH_IN_THREAD_LIST(td, tl) do { \
     pthread_mutex_lock(&(tl)->lock);        \
     (td) = (tl)->head;                      \
@@ -67,6 +71,8 @@ THE SOFTWARE.
 
 typedef struct mem_range_t mem_range_t;
 
+typedef struct free_t free_t;
+
 typedef struct thread_data_t thread_data_t;
 
 typedef struct thread_list_t thread_list_t;
@@ -84,6 +90,10 @@ struct mem_range_t {
 /*                       Storage for per-thread data.                       */
 /****************************************************************************/
 
+struct free_t {
+    free_t *next;
+};
+
 struct thread_data_t {
 
     // User parameters for creating a new thread.
@@ -100,6 +110,7 @@ struct thread_data_t {
     int is_active;            // The thread is running user code.
 
     queue_t ptr_list;         // Local list of pointers to be collected.
+    free_t *free_list;
 
     size_t local_timestamp;
     int times_without_update;
@@ -114,6 +125,7 @@ struct thread_data_t {
 struct thread_list_t {
     thread_data_t *head;
     pthread_mutex_t lock;
+    unsigned int count; // Number of threads.
 };
 
 thread_data_t *threadscan_util_thread_data_new ();

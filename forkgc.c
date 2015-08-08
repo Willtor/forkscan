@@ -39,6 +39,8 @@ THE SOFTWARE.
 #include <sys/time.h>
 #include <unistd.h>
 
+#define SAVINGS_THRESHOLD 2048
+
 #define PIPE_READ 0
 #define PIPE_WRITE 1
 
@@ -100,16 +102,24 @@ static volatile int g_sweepers_working;
 static volatile int g_sweepers_remaining;
 static sweeper_work_t g_sweeper_work[MAX_SWEEPER_THREADS];
 
-static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
+size_t rdtsc ()
+{
+    unsigned int low, high;
+    size_t ret;
+    __asm__ ("rdtsc" : "=a" (low), "=d" (high));
+    ret = ((size_t)high) << 32;
+    return ret | low;
+}
+
+static int unref_addr (unref_config_t *unref_config, int n, int max_depth)
 {
     int i;
     size_t *addrs = unref_config->gc_data->addrs;
     size_t addr = addrs[n];
     assert(addr & 1);
     size_t *p = (size_t*)PTR_MASK(addr);
-    //int elements = unref_config->gc_data->alloc_sz[n] / sizeof(size_t);
-    int elements = (int)(je_malloc_usable_size(p) / sizeof(size_t));
-    //int elements = 32;
+    int elements = (int)(MALLOC_USABLE_SIZE(p) / sizeof(size_t));
+    int savings = 1;
 
     for (i = 0; i < elements; ++i) {
         size_t deep_addr = PTR_MASK(p[i]);
@@ -138,17 +148,49 @@ static void unref_addr (unref_config_t *unref_config, int n, int max_depth)
                     // Recurse, if depth permits.  We have a max depth
                     // parameter because in certain cases, the stack could
                     // overflow.
-                    unref_addr(unref_config, loc, max_depth - 1);
+                    savings += unref_addr(unref_config, loc, max_depth - 1);
                 }
             }
         }
     }
-    // je_free(p); // Done with it!  Bam! ALEX
+    //FREE(p); // Done with it!  Bam! ALEX
+    return savings;
+}
+
+static int fib (int n) {
+    if (n < 2) return n;
+    int a = fib(n - 1);
+    int b = fib(n - 2);
+    return a + b;
+}
+
+static void give_to_random_thread (thread_list_t *tl, free_t *head,
+                                   free_t *tail)
+{
+    size_t cycles = (unsigned int)rdtsc();
+
+    pthread_mutex_lock(&tl->lock);
+    if (tl->count != 0) {
+        // tl->count could be zero if the program is about to exit.
+        size_t thread_num = cycles % tl->count;
+        thread_data_t *td = tl->head;
+        while (thread_num > 0) {
+            --thread_num;
+            td = td->next;
+            assert(td != NULL);
+        }
+        // CAS it in there.
+        do {
+            tail->next = td->free_list;
+        } while (!BCAS(&td->free_list, tail->next, head));
+    }
+    pthread_mutex_unlock(&tl->lock);
 }
 
 static void *address_range (sweeper_work_t *work)
 {
     gc_data_t *gc_data = work->unref_config->gc_data;
+    int savings = 0;
     int i;
     for (i = work->range_begin; i < work->range_end; ++i) {
         size_t addr = gc_data->addrs[i];
@@ -156,14 +198,37 @@ static void *address_range (sweeper_work_t *work)
         assert(gc_data->refs[i] >= 0);
         if (0 == (addr & 1) && gc_data->refs[i] == 0) {
             if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
-                unref_addr(work->unref_config, i, 30);
+                savings += unref_addr(work->unref_config, i, 30);
             }
         }
     }
+
+    // Distribute nodes among threads.
+    thread_list_t *tl = threadscan_proc_get_thread_list();
+    int n_threads = tl->count; // Benign race.  Includes main().
+    if (n_threads == 0) return NULL; // Program must be about to exit.
+    int nodes_per_chunk = savings / n_threads;
+    if (nodes_per_chunk < SAVINGS_THRESHOLD) {
+        nodes_per_chunk = MIN_OF(savings, SAVINGS_THRESHOLD);
+    }
+    int in_this_chunk = 0;
+    free_t *head = NULL, *tail = NULL;
     for (i = work->range_begin; i < work->range_end; ++i) {
         if (gc_data->addrs[i] & 1) {
-            ((size_t*)PTR_MASK(gc_data->addrs[i]))[0] = 0;
-            //je_free((void*)PTR_MASK(gc_data->addrs[i]));
+            free_t *node = (free_t*)PTR_MASK(gc_data->addrs[i]);
+            if (NULL == tail) {
+                tail = head = node;
+            } else {
+                node->next = head;
+                head = node;
+            }
+            ++in_this_chunk;
+            if (in_this_chunk >= nodes_per_chunk) {
+                assert(in_this_chunk == nodes_per_chunk);
+                give_to_random_thread(tl, head, tail);
+                in_this_chunk = 0;
+                head = tail = NULL;
+            }
         }
     }
     return NULL;
@@ -214,6 +279,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
         g_gc_waiting = GC_WAITING_FOR_SWEEPERS;
         pthread_cond_wait(&g_gc_cond, &g_gc_mutex);
     }
+    g_gc_waiting = GC_NOT_WAITING;
     pthread_mutex_unlock(&g_gc_mutex);
 
     // Compact the list.
@@ -237,10 +303,10 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
             }
             ++write_position;
         }
-
         /*
         if (gc_data->refs[i] == 0) {
-            je_free((void*)PTR_MASK(gc_data->addrs[i]));
+            //fib(10);
+            FREE((void*)PTR_MASK(gc_data->addrs[i]));
         } else {
             if (write_position != i) {
                 gc_data->addrs[write_position] = gc_data->addrs[i];
@@ -372,7 +438,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     int i;
     for (i = 0; i < ret->n_addrs; ++i) {
         assert(ret->alloc_sz[i] == 0);
-        ret->alloc_sz[i] = 0; //je_malloc_usable_size((void*)ret->addrs[i]);
+        ret->alloc_sz[i] = 0; //MALLOC_USABLE_SIZE((void*)ret->addrs[i]);
         //assert(ret->alloc_sz[i] > 0);
     }
 
@@ -410,9 +476,11 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     // Send out signals.  When everybody is waiting at the line, fork the
     // process for the snapshot.
     g_received_signal = 0;
+    /*
     struct timeval t1, t2;
     double elapsed_time;
     gettimeofday(&t1, NULL);
+    */
     sig_count = threadscan_proc_signal(SIGTHREADSCAN);
     while (g_received_signal < sig_count) pthread_yield();
     child_pid = fork();
@@ -430,10 +498,12 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 
     ++g_cleanup_counter;
     close(pipefd[PIPE_WRITE]);
+    /*
     gettimeofday(&t2, NULL);
     elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
     elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
     g_total_fork_time += elapsed_time;
+    */
 
     // Wait for the child to complete the scan.
     size_t bytes_scanned;

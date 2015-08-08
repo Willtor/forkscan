@@ -121,6 +121,7 @@ void threadscan_util_thread_list_init (thread_list_t *tl)
     if (tl->head == NULL) {
         // Do not reinitialize the mutex.  That would be bad.
         pthread_mutex_init(&tl->lock, NULL);
+        tl->count = 0;
     }
 }
 
@@ -130,6 +131,7 @@ void threadscan_util_thread_list_add (thread_list_t *tl, thread_data_t *td)
     pthread_mutex_lock(&tl->lock);
     td->next = tl->head;
     tl->head = td;
+    ++tl->count;
     pthread_mutex_unlock(&tl->lock);
 }
 
@@ -149,6 +151,8 @@ void threadscan_util_thread_list_remove (thread_list_t *tl, thread_data_t *td)
         }
         tmp->next = td->next;
     }
+    assert(tl->count > 0);
+    --tl->count;
     pthread_mutex_unlock(&tl->lock);
 }
 
