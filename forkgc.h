@@ -29,9 +29,9 @@ THE SOFTWARE.
 #define SIGTHREADSCAN SIGUSR1
 
 /**
- * Wait for the GC routine to complete its snapshot.
+ * Acknowledge the signal sent by the GC thread and perform any work required.
  */
-void forkgc_wait_for_snapshot ();
+void forkgc_acknowledge_signal ();
 
 /**
  * Pass a list of pointers to the GC thread for it to collect.

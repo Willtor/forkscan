@@ -153,13 +153,11 @@ static void free_ptrs (thread_data_t *td)
     int i;
 
     assert(td);
-    for (i = 0; i < 2; ++i) {
+    extern int g_frees_required;
+    for (i = 0; i < g_frees_required; ++i) {
         free_t *head = td->free_list;
         if (NULL == head) return;
-        while (!BCAS(&td->free_list, head, head->next)) {
-            head = td->free_list;
-            assert(NULL != head);
-        }
+        td->free_list = head->next;
         head->next = NULL;
         FREE(head);
     }
@@ -171,16 +169,16 @@ void *automalloc (size_t size)
     void *p;
     g_in_malloc = 1;
     p = MALLOC(size);
-    g_in_malloc = 0;
 
     // Free a couple pointers, if we have them.
     free_ptrs(threadscan_thread_get_td());
+    g_in_malloc = 0;
 
     if (g_waiting_to_fork) {
         // Sadly, TC-Malloc has a deadlock bug when interacting with fork().
         // We need to make sure it isn't holding the global lock when we
         // initiate cleanup.
-        forkgc_wait_for_snapshot();
+        forkgc_acknowledge_signal();
         g_waiting_to_fork = 0;
     }
 
@@ -198,7 +196,7 @@ static void signal_handler (int sig)
         g_waiting_to_fork = 1;
         return;
     }
-    forkgc_wait_for_snapshot();
+    forkgc_acknowledge_signal();
 }
 
 /**

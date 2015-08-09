@@ -36,7 +36,8 @@ THE SOFTWARE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
+#include <sys/time.h> // FIXME: needed?
+#include "thread.h"
 #include <unistd.h>
 
 #define SAVINGS_THRESHOLD 2048
@@ -80,13 +81,17 @@ struct sweeper_work_t
     int range_begin, range_end;
 };
 
+int g_frees_required = 8;
+
 // For signaling the garbage collector with work to do.
 static pthread_mutex_t g_gc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_gc_cond = PTHREAD_COND_INITIALIZER;
 
 static gc_data_t *g_gc_data, *g_uncollected_data;
 static volatile int g_received_signal;
+static volatile enum { MODE_SNAPSHOT, MODE_SWEEP } g_signal_mode;
 static volatile size_t g_cleanup_counter;
+static volatile size_t g_sweep_counter;
 static enum { GC_NOT_WAITING,
               GC_WAITING_FOR_WORK, 
               GC_WAITING_FOR_SWEEPERS,
@@ -203,6 +208,23 @@ static void *address_range (sweeper_work_t *work)
         }
     }
 
+    /*
+    for (i = work->range_begin; i < work->range_end; ++i) {
+        if (gc_data->addrs[i] & 1) {
+            free_t *node = (free_t*)PTR_MASK(gc_data->addrs[i]);
+            FREE(node);
+        }
+    }
+    */
+    thread_data_t *td = threadscan_thread_get_td();
+    for (i = work->range_begin; i < work->range_end; ++i) {
+        if (gc_data->addrs[i] & 1) {
+            free_t *node = (free_t*)PTR_MASK(gc_data->addrs[i]);
+            node->next = td->free_list;
+            td->free_list = node;
+        }
+    }
+    /*
     // Distribute nodes among threads.
     thread_list_t *tl = threadscan_proc_get_thread_list();
     int n_threads = tl->count; // Benign race.  Includes main().
@@ -231,6 +253,7 @@ static void *address_range (sweeper_work_t *work)
             }
         }
     }
+    */
     return NULL;
 }
 
@@ -239,7 +262,7 @@ static void *address_range (sweeper_work_t *work)
 static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
 {
     unref_config_t unref_config;
-    int thread_count;
+    int sig_count;
     int addrs_per_thread;
     int i;
 
@@ -248,27 +271,24 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     // FIXME: max_val should change in the case of DEEP_REFERENCES.
     unref_config.max_val = gc_data->addrs[gc_data->n_addrs - 1];
 
-    // Configure threads.
-    thread_count = (gc_data->n_addrs / ADDRS_PER_THREAD) + 1;
-    assert(thread_count > 0);
-    if (thread_count > g_sweepers_sleeping) thread_count = g_sweepers_sleeping;
-    addrs_per_thread = gc_data->n_addrs / thread_count;
+    g_signal_mode = MODE_SWEEP;
+    g_received_signal = 0;
+    sig_count = threadscan_proc_signal(SIGTHREADSCAN);
+    if (sig_count == 0) return 0; // Program is about to exit.
+    addrs_per_thread = gc_data->n_addrs / sig_count;
 
-    for (i = 0; i < thread_count; ++i) {
+    // Set up work for the threads.
+    for (i = 0; i < sig_count; ++i) {
         g_sweeper_work[i].unref_config = &unref_config;
         g_sweeper_work[i].range_begin = i * addrs_per_thread;
         g_sweeper_work[i].range_end = (i + 1) * addrs_per_thread;
     }
-    g_sweeper_work[thread_count - 1].range_end = gc_data->n_addrs;
-
-    // Request thread_count sweepers to perform the scan.
+    g_sweeper_work[sig_count - 1].range_end = gc_data->n_addrs;
     g_sweepers_working = 0;
-    g_sweepers_remaining = thread_count;
-    for (i = 0; i < thread_count; ++i) {
-        // Don't need to grab the mutex in order to signal sweepers.  We know
-        // that at least thread_count of them are waiting.
-        pthread_cond_signal(&g_sweeper_cond);
-    }
+    g_sweepers_remaining = sig_count;
+
+    while (g_received_signal < sig_count) pthread_yield();
+    ++g_sweep_counter;
 
     // Wait for sweepers to complete.
     pthread_mutex_lock(&g_gc_mutex);
@@ -332,6 +352,8 @@ static void *sweeper_thread (void *arg)
         --g_sweepers_sleeping;
         pthread_mutex_unlock(&g_sweeper_mutex);
 
+        threadscan_fatal("Bad news, yo... bad news.\n");
+
         // Perform sweep.
         int id = __sync_fetch_and_add(&g_sweepers_working, 1);
         address_range(&g_sweeper_work[id]);
@@ -380,6 +402,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
         n_addrs += tmp->n_addrs;
         ++list_count;
     } while ((tmp = tmp->next));
+    g_frees_required = MAX_OF(list_count * 8, 8);
 
     assert(n_addrs != 0);
 
@@ -475,12 +498,8 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 
     // Send out signals.  When everybody is waiting at the line, fork the
     // process for the snapshot.
+    g_signal_mode = MODE_SNAPSHOT;
     g_received_signal = 0;
-    /*
-    struct timeval t1, t2;
-    double elapsed_time;
-    gettimeofday(&t1, NULL);
-    */
     sig_count = threadscan_proc_signal(SIGTHREADSCAN);
     while (g_received_signal < sig_count) pthread_yield();
     child_pid = fork();
@@ -498,12 +517,6 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 
     ++g_cleanup_counter;
     close(pipefd[PIPE_WRITE]);
-    /*
-    gettimeofday(&t2, NULL);
-    elapsed_time = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
-    elapsed_time += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
-    g_total_fork_time += elapsed_time;
-    */
 
     // Wait for the child to complete the scan.
     size_t bytes_scanned;
@@ -556,18 +569,43 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 /****************************************************************************/
 
 /**
- * Wait for the GC routine to complete its snapshot.
+ * Acknowledge the signal sent by the GC thread and perform any work required.
  */
-void forkgc_wait_for_snapshot ()
+void forkgc_acknowledge_signal ()
 {
-    size_t old_counter;
-    jmp_buf env; // Spilled registers.
+    if (g_signal_mode == MODE_SNAPSHOT) {
+        size_t old_counter;
+        jmp_buf env; // Spilled registers.
 
-    // Acknowledge the signal and wait for the snapshot to complete.
-    old_counter = g_cleanup_counter;
-    setjmp(env);
-    __sync_fetch_and_add(&g_received_signal, 1);
-    while (old_counter == g_cleanup_counter) pthread_yield();
+        // Acknowledge the signal and wait for the snapshot to complete.
+        old_counter = g_cleanup_counter;
+        setjmp(env);
+        __sync_fetch_and_add(&g_received_signal, 1);
+        while (old_counter == g_cleanup_counter) pthread_yield();
+    } else {
+        assert(g_signal_mode == MODE_SWEEP);
+        size_t old_counter = g_sweep_counter;
+        __sync_fetch_and_add(&g_received_signal, 1);
+        while (old_counter == g_sweep_counter) pthread_yield();
+
+        // Perform sweep.
+        int id = __sync_fetch_and_add(&g_sweepers_working, 1);
+        address_range(&g_sweeper_work[id]);
+        int done = __sync_fetch_and_sub(&g_sweepers_remaining, 1) - 1;
+
+        // See if we're the last one.
+        if (done == 0) {
+            // Last one out.  Signal the GC thread.
+            pthread_mutex_lock(&g_gc_mutex);
+            assert(g_gc_waiting != GC_WAITING_FOR_WORK);
+            if (g_gc_waiting == GC_WAITING_FOR_SWEEPERS) {
+                pthread_cond_signal(&g_gc_cond);
+            } else {
+                g_gc_waiting = GC_DONT_WAIT_FOR_SWEEPERS;
+            }
+            pthread_mutex_unlock(&g_gc_mutex);
+        }
+    }
 }
 
 /**

@@ -55,6 +55,7 @@ THE SOFTWARE.
 #define PAGEALIGN(addr) ((addr) & ~(PAGESIZE - 1))
 
 #define MIN_OF(a, b) ((a) < (b) ? (a) : (b))
+#define MAX_OF(a, b) ((a) < (b) ? (b) : (a))
 
 #define BCAS(ptr, compare, swap)                        \
     __sync_bool_compare_and_swap(ptr, compare, swap)
