@@ -178,14 +178,14 @@ void threadscan_proc_map_iterate (int (*f) (void *arg,
         }
     }
 
-    fclose(fp);
+    //fclose(fp); // FIXME: Need to make this explicit, somehow.
 }
 
 /****************************************************************************/
 /*                             Per-thread data                              */
 /****************************************************************************/
 
-/**
+/**    threadscan_diagnostic("Done searching.\n");
  * Threads call this to register themselves with threadscan when they start.
  */
 void threadscan_proc_add_thread_data (thread_data_t *td)

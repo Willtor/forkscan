@@ -36,7 +36,7 @@ THE SOFTWARE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h> // FIXME: needed?
+#include <sys/time.h>
 #include "thread.h"
 #include <unistd.h>
 
@@ -107,13 +107,22 @@ static volatile int g_sweepers_working;
 static volatile int g_sweepers_remaining;
 static sweeper_work_t g_sweeper_work[MAX_SWEEPER_THREADS];
 
+static volatile size_t g_total_sweep_time = 0;
+
 size_t rdtsc ()
 {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    size_t ret = (size_t)(ts.tv_sec * (1000));
+    ret += (size_t)(ts.tv_nsec / (1000 * 1000));
+    return ret;
+    /*
     unsigned int low, high;
     size_t ret;
     __asm__ ("rdtsc" : "=a" (low), "=d" (high));
     ret = ((size_t)high) << 32;
     return ret | low;
+    */
 }
 
 static int unref_addr (unref_config_t *unref_config, int n, int max_depth)
@@ -265,6 +274,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     int sig_count;
     int addrs_per_thread;
     int i;
+    size_t start, end;
 
     unref_config.gc_data = gc_data;
     unref_config.min_val = gc_data->addrs[0];
@@ -273,6 +283,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
 
     g_signal_mode = MODE_SWEEP;
     g_received_signal = 0;
+    start = rdtsc();
     sig_count = threadscan_proc_signal(SIGTHREADSCAN);
     if (sig_count == 0) return 0; // Program is about to exit.
     addrs_per_thread = gc_data->n_addrs / sig_count;
@@ -301,6 +312,11 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
     }
     g_gc_waiting = GC_NOT_WAITING;
     pthread_mutex_unlock(&g_gc_mutex);
+    end = rdtsc();
+
+    // Save time.
+    size_t total_time = end > start ? end - start : 0;
+    g_total_sweep_time += total_time;
 
     // Compact the list.
     int write_position = 0;
@@ -498,8 +514,10 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 
     // Send out signals.  When everybody is waiting at the line, fork the
     // process for the snapshot.
+    size_t start, end;
     g_signal_mode = MODE_SNAPSHOT;
     g_received_signal = 0;
+    start = rdtsc();
     sig_count = threadscan_proc_signal(SIGTHREADSCAN);
     while (g_received_signal < sig_count) pthread_yield();
     child_pid = fork();
@@ -517,6 +535,8 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
 
     ++g_cleanup_counter;
     close(pipefd[PIPE_WRITE]);
+    end = rdtsc();
+    g_total_fork_time += end - start;
 
     // Wait for the child to complete the scan.
     size_t bytes_scanned;
@@ -702,6 +722,8 @@ void forkgc_print_statistics ()
     printf("ave-fork-time: %d\n",
            g_cleanup_counter == 0 ? 0
            : ((int)(g_total_fork_time / g_cleanup_counter)));
+    printf("ave-sweep-time: %llu\n", g_sweep_counter > 0
+           ? g_total_sweep_time / g_sweep_counter : 0);
 }
 
 __attribute__((destructor))

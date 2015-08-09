@@ -38,6 +38,13 @@ THE SOFTWARE.
 /****************************************************************************/
 
 #define BINARY_THRESHOLD 32
+#define MAX_RANGES 2048
+#define MAX_CHILDREN 8
+#define MEMORY_THRESHOLD (1024 * 1024 * 512)
+
+static mem_range_t g_ranges[MAX_RANGES];
+static int g_n_ranges;
+static size_t g_bytes_to_scan;
 
 int is_ref (gc_data_t *gc_data, int loc, size_t cmp)
 {
@@ -49,8 +56,6 @@ int is_ref (gc_data_t *gc_data, int loc, size_t cmp)
     return gc_data->addrs[loc] == cmp;
 #endif
 }
-
-static size_t n_bytes_searched;
 
 /****************************************************************************/
 /*                            Search utilities.                             */
@@ -131,7 +136,6 @@ static void search_range (mem_range_t *range, gc_data_t *gc_data)
 
     mem = (size_t*)range->low;
     do_search(mem, (range->high - range->low) / sizeof(size_t), gc_data);
-    n_bytes_searched += range->high - range->low;
     return;
 }
 
@@ -157,11 +161,11 @@ static int is_lib (const char *library, const char *path)
     }
 }
 
-static int scan_memory (void *p,
-                        size_t low,
-                        size_t high,
-                        const char *bits,
-                        const char *path)
+static int collect_ranges (void *p,
+                           size_t low,
+                           size_t high,
+                           const char *bits,
+                           const char *path)
 {
     // Decide whether this is a region we want to look at.
 
@@ -216,13 +220,16 @@ static int scan_memory (void *p,
        (potentially) have a range that needs to be turned into Swiss Cheese of
        sub-ranges that we actually want to look at. */
 
-    gc_data_t *gc_data = (gc_data_t*)p;
     mem_range_t big_range = { low, high };
     while (big_range.low != big_range.high) {
         mem_range_t next = threadscan_alloc_next_subrange(&big_range);
         if (next.low != next.high) {
             // This is a region of memory we want to scan.
-            search_range(&next, gc_data);
+            if (g_n_ranges >= MAX_RANGES) {
+                threadscan_fatal("Too many memory ranges.\n");
+            }
+            g_ranges[g_n_ranges++] = next;
+            g_bytes_to_scan += next.high - next.low;
         }
     }
 
@@ -232,9 +239,34 @@ static int scan_memory (void *p,
 void threadscan_child (gc_data_t *gc_data, int fd)
 {
     // Scan memory for references.
-    n_bytes_searched = 0;
-    threadscan_proc_map_iterate(scan_memory, (void*)gc_data);
-    if (sizeof(size_t) != write(fd, &n_bytes_searched, sizeof(size_t))) {
-        threadscan_fatal("Failed to write to parent.\n");
+    g_bytes_to_scan = 0;
+    threadscan_proc_map_iterate(collect_ranges, NULL);
+    gc_data->completed_children = 0;
+
+    int n_siblings = MIN_OF(MAX_CHILDREN,
+                            g_bytes_to_scan / MEMORY_THRESHOLD);
+    n_siblings = MIN_OF(n_siblings, g_n_ranges);
+    // n_siblings could be zero, in which case we don't fork.
+    int child_id = 0;
+    for (child_id = 0; child_id < n_siblings; ++child_id) {
+        if (fork() == 0) break;
+    }
+    ++n_siblings;
+
+    // Scan this child's ranges.
+    int range_block = g_n_ranges / n_siblings;
+    int max_range = child_id == n_siblings - 1
+        ? g_n_ranges : (child_id + 1) * range_block;
+    int i;
+    for (i = child_id * range_block; i < max_range; ++i) {
+        search_range(&g_ranges[i], gc_data);
+    }
+
+    if (n_siblings - 1
+        == __sync_fetch_and_add(&gc_data->completed_children, 1)) {
+        // Last process out.  Alert the uber parent.
+        if (sizeof(size_t) != write(fd, &g_bytes_to_scan, sizeof(size_t))) {
+            threadscan_fatal("Failed to write to parent.\n");
+        }
     }
 }
