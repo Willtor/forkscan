@@ -115,7 +115,7 @@ static void do_search (size_t *mem, size_t range_size, gc_data_t *gc_data)
                                 : (v + 1) * (PAGESIZE / sizeof(size_t)));
         if (is_ref(gc_data, loc, cmp)) {
             // It's a pointer somewhere into the allocated region of memory.
-            ++gc_data->refs[loc];
+            __sync_fetch_and_add(&gc_data->refs[loc], 1);
         }
 #ifndef NDEBUG
         else {

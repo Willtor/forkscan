@@ -212,7 +212,7 @@ static void *address_range (sweeper_work_t *work)
         assert(gc_data->refs[i] >= 0);
         if (0 == (addr & 1) && gc_data->refs[i] == 0) {
             if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
-                savings += unref_addr(work->unref_config, i, 30);
+                savings += unref_addr(work->unref_config, i, 64);
             }
         }
     }
