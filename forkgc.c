@@ -225,6 +225,9 @@ static void *address_range (sweeper_work_t *work)
         }
     }
     */
+    // FIXME: Memory leak.  Nodes this thread has passed in the list may have
+    // their reference counts decremented by another thread, later.  This
+    // should be done during the sweep-proper.
     thread_data_t *td = threadscan_thread_get_td();
     for (i = work->range_begin; i < work->range_end; ++i) {
         if (gc_data->addrs[i] & 1) {
