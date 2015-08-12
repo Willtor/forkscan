@@ -150,21 +150,32 @@ static int unref_addr (thread_data_t *td, unref_config_t *unref_config,
             // Found a value within our range of addresses.  See if it's in
             // our set.  Also, null it.
             p[i] = 0;
+            gc_data_t *gc_data = unref_config->gc_data;
+            // Level 1 search: Find the page the address would be on.
+            int v = binary_search(deep_addr, gc_data->minimap, 0,
+                                  gc_data->n_minimap);
+            // Level 2 search: Find the address within the page.
+            int loc = binary_search(deep_addr, gc_data->addrs,
+                                    v * (PAGESIZE / sizeof(size_t)),
+                                    v == gc_data->n_minimap - 1
+                                    ? gc_data->n_addrs
+                                    : (v + 1) * (PAGESIZE / sizeof(size_t)));
+            /*
             int loc = deep_addr < addr
                 ? binary_search(deep_addr, addrs, 0, n)
                 : binary_search(deep_addr, addrs, n,
                                 unref_config->gc_data->n_addrs);
+            */
 
-            if (is_ref(unref_config->gc_data, loc, deep_addr)) {
+            if (is_ref(gc_data, loc, deep_addr)) {
 
                 // Found an apparent address.  Unreference it.
-                __sync_fetch_and_sub(&unref_config->gc_data->refs[loc], 1);
-                int remaining_refs = unref_config->gc_data->refs[loc];
+                __sync_fetch_and_sub(&gc_data->refs[loc], 1);
+                int remaining_refs = gc_data->refs[loc];
                 assert(remaining_refs >= 0);
                 if (max_depth > 0
                     && remaining_refs == 0
-                    && BCAS(&unref_config->gc_data->addrs[loc],
-                            deep_addr, deep_addr | 1)) {
+                    && BCAS(&gc_data->addrs[loc], deep_addr, deep_addr | 1)) {
 
                     // Recurse, if depth permits.  We have a max depth
                     // parameter because in certain cases, the stack could
