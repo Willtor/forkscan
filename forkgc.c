@@ -87,7 +87,13 @@ int g_frees_required = 8;
 static pthread_mutex_t g_gc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_gc_cond = PTHREAD_COND_INITIALIZER;
 
+#define WAITING_THRESHOLD 16
+
 static gc_data_t *g_gc_data, *g_uncollected_data;
+static volatile int g_waiting_collects;
+static pthread_mutex_t g_client_waiting_lock;
+static pthread_cond_t g_client_waiting_cond;
+
 static volatile int g_received_signal;
 static volatile enum { MODE_SNAPSHOT, MODE_SWEEP } g_signal_mode;
 static volatile size_t g_cleanup_counter;
@@ -125,7 +131,8 @@ size_t rdtsc ()
     */
 }
 
-static int unref_addr (unref_config_t *unref_config, int n, int max_depth)
+static int unref_addr (thread_data_t *td, unref_config_t *unref_config,
+                       int n, int max_depth)
 {
     int i;
     size_t *addrs = unref_config->gc_data->addrs;
@@ -162,11 +169,15 @@ static int unref_addr (unref_config_t *unref_config, int n, int max_depth)
                     // Recurse, if depth permits.  We have a max depth
                     // parameter because in certain cases, the stack could
                     // overflow.
-                    savings += unref_addr(unref_config, loc, max_depth - 1);
+                    savings += unref_addr(td, unref_config, loc, max_depth - 1);
                 }
             }
         }
     }
+
+    free_t *f = (free_t*)p;
+    f->next = td->free_list;
+    td->free_list = f;
     //FREE(p); // Done with it!  Bam! ALEX
     return savings;
 }
@@ -203,6 +214,7 @@ static void give_to_random_thread (thread_list_t *tl, free_t *head,
 
 static void *address_range (sweeper_work_t *work)
 {
+    thread_data_t *td = threadscan_thread_get_td();
     gc_data_t *gc_data = work->unref_config->gc_data;
     int savings = 0;
     int i;
@@ -212,7 +224,7 @@ static void *address_range (sweeper_work_t *work)
         assert(gc_data->refs[i] >= 0);
         if (0 == (addr & 1) && gc_data->refs[i] == 0) {
             if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
-                savings += unref_addr(work->unref_config, i, 64);
+                savings += unref_addr(td, work->unref_config, i, 64);
             }
         }
     }
@@ -225,6 +237,7 @@ static void *address_range (sweeper_work_t *work)
         }
     }
     */
+    /*
     // FIXME: Memory leak.  Nodes this thread has passed in the list may have
     // their reference counts decremented by another thread, later.  This
     // should be done during the sweep-proper.
@@ -236,6 +249,7 @@ static void *address_range (sweeper_work_t *work)
             td->free_list = node;
         }
     }
+    */
     /*
     // Distribute nodes among threads.
     thread_list_t *tl = threadscan_proc_get_thread_list();
@@ -637,12 +651,22 @@ void forkgc_acknowledge_signal ()
 void forkgc_initiate_collection (gc_data_t *gc_data)
 {
     pthread_mutex_lock(&g_gc_mutex);
+    ++g_waiting_collects;
     gc_data->next = g_gc_data;
     g_gc_data = gc_data;
     if (g_gc_waiting == GC_WAITING_FOR_WORK) {
         pthread_cond_signal(&g_gc_cond);
     }
     pthread_mutex_unlock(&g_gc_mutex);
+
+    while (g_waiting_collects > WAITING_THRESHOLD) {
+        //pthread_yield(); // FIXME: Yield.
+        pthread_mutex_lock(&g_client_waiting_lock);
+        if (g_waiting_collects > WAITING_THRESHOLD) {
+            pthread_cond_wait(&g_client_waiting_cond, &g_client_waiting_lock);
+        }
+        pthread_mutex_unlock(&g_client_waiting_lock);
+    }
 }
 
 /**
@@ -684,6 +708,13 @@ void *forkgc_thread (void *ignored)
         assert(g_gc_data);
         gc_data = g_gc_data;
         g_gc_data = NULL;
+        if (g_waiting_collects > WAITING_THRESHOLD) {
+            g_waiting_collects = 0;
+            pthread_mutex_lock(&g_client_waiting_lock);
+            pthread_cond_broadcast(&g_client_waiting_cond);
+            pthread_mutex_unlock(&g_client_waiting_lock);
+        } else g_waiting_collects = 0;
+
         pthread_mutex_unlock(&g_gc_mutex);
 
 #ifndef NDEBUG

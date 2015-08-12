@@ -39,8 +39,9 @@ THE SOFTWARE.
 
 #define BINARY_THRESHOLD 32
 #define MAX_RANGES 2048
+#define MAX_RANGE_SIZE (256 * 1024 * 1024)
 #define MAX_CHILDREN 8
-#define MEMORY_THRESHOLD (1024 * 1024 * 512)
+#define MEMORY_THRESHOLD (1024 * 1024 * 128)
 
 static mem_range_t g_ranges[MAX_RANGES];
 static int g_n_ranges;
@@ -225,11 +226,23 @@ static int collect_ranges (void *p,
         mem_range_t next = threadscan_alloc_next_subrange(&big_range);
         if (next.low != next.high) {
             // This is a region of memory we want to scan.
+            g_bytes_to_scan += next.high - next.low;
+            while (next.low + MAX_RANGE_SIZE < next.high) {
+                g_ranges[g_n_ranges] = next;
+                g_ranges[g_n_ranges].high = next.low + MAX_RANGE_SIZE;
+                next.low += MAX_RANGE_SIZE;
+                ++g_n_ranges;
+            }
+            g_ranges[g_n_ranges++] = next;
             if (g_n_ranges >= MAX_RANGES) {
                 threadscan_fatal("Too many memory ranges.\n");
             }
+            /*
+            threadscan_diagnostic("  range: %lld KB\n", (int)
+                                  ((next.high - next.low) / (1024)));
             g_ranges[g_n_ranges++] = next;
             g_bytes_to_scan += next.high - next.low;
+            */
         }
     }
 
