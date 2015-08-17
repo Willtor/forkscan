@@ -452,14 +452,14 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
 
     // How many pages of memory are needed to store this many addresses?
     size_t pages_of_addrs = ((n_addrs * sizeof(size_t))
-                             + PAGE_SIZE - sizeof(size_t)) / PAGE_SIZE;
+                             + PAGESIZE - sizeof(size_t)) / PAGESIZE;
     // How many pages of memory are needed to store the minimap?
     size_t pages_of_minimap = ((pages_of_addrs * sizeof(size_t))
-                               + PAGE_SIZE - sizeof(size_t)) / PAGE_SIZE;
+                               + PAGESIZE - sizeof(size_t)) / PAGESIZE;
     // How many pages are needed to store the allocated size and reference
     // count arrays?
     size_t pages_of_count = ((n_addrs * sizeof(int))
-                             + PAGE_SIZE - sizeof(int)) / PAGE_SIZE;
+                             + PAGESIZE - sizeof(int)) / PAGESIZE;
     // Total pages needed is the number of pages for the addresses, plus the
     // number of pages needed for the minimap, plus one (for the gc_data_t).
     char *p =
@@ -468,21 +468,21 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
                                              + pages_of_count   // ref count.
                                              + pages_of_count   // alloc size.
                                              + 1)               // struct page.
-                                            * PAGE_SIZE);
+                                            * PAGESIZE);
 
     // Perform assignments as offsets into the block that was bulk-allocated.
     size_t offset = 0;
     ret = (gc_data_t*)p;
-    offset += PAGE_SIZE;
+    offset += PAGESIZE;
 
     ret->addrs = (size_t*)(p + offset);
-    offset += pages_of_addrs * PAGE_SIZE;
+    offset += pages_of_addrs * PAGESIZE;
 
     ret->minimap = (size_t*)(p + offset);
-    offset += pages_of_minimap * PAGE_SIZE;
+    offset += pages_of_minimap * PAGESIZE;
 
     ret->refs = (int*)(p + offset);
-    offset += pages_of_count * PAGE_SIZE;
+    offset += pages_of_count * PAGESIZE;
 
     ret->alloc_sz = (int*)(p + offset);
 
@@ -688,9 +688,9 @@ void *forkgc_thread (void *ignored)
     gc_data_t *gc_data;
 
     // FIXME: Warning: Fragile code knows the size of a pointer and a page.
-    char *buffer = threadscan_alloc_mmap_shared(PAGE_SIZE * 9);
+    char *buffer = threadscan_alloc_mmap_shared(PAGESIZE * 9);
     queue_t *commq = (queue_t*)buffer;
-    threadscan_queue_init(commq, (size_t*)&buffer[PAGE_SIZE], PAGE_SIZE);
+    threadscan_queue_init(commq, (size_t*)&buffer[PAGESIZE], PAGESIZE);
 
     // Start thread pool.
     pthread_mutex_init(&g_sweeper_mutex, NULL);

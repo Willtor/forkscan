@@ -106,7 +106,7 @@ static void threadscan_reclaim ()
     //   4096 -  : Address list.
     working_memory = threadscan_alloc_mmap(g_tsdata.working_buffer_sz);
     gc_data = (gc_data_t*)working_memory;
-    gc_data->addrs = (size_t*)&working_memory[PAGE_SIZE];
+    gc_data->addrs = (size_t*)&working_memory[PAGESIZE];
     gc_data->n_addrs = 0;
     gc_data->capacity = g_tsdata.max_ptrs;
 
@@ -215,5 +215,5 @@ static void register_signal_handlers ()
 
     // Calculate reserved space for stored addresses.
     g_tsdata.working_buffer_sz = g_tsdata.max_ptrs * sizeof(size_t)
-        + PAGE_SIZE;
+        + PAGESIZE;
 }
