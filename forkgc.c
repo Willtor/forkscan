@@ -285,19 +285,6 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
             }
             ++write_position;
         }
-        /*
-        if (gc_data->refs[i] == 0) {
-            //fib(10);
-            FREE((void*)PTR_MASK(gc_data->addrs[i]));
-        } else {
-            if (write_position != i) {
-                gc_data->addrs[write_position] = gc_data->addrs[i];
-                gc_data->refs[write_position] = gc_data->refs[i];
-                gc_data->alloc_sz[write_position] = gc_data->alloc_sz[i];
-            }
-            ++write_position;
-        }
-        */
     }
     gc_data->n_addrs = write_position;
 
