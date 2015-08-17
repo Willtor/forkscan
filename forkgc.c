@@ -160,12 +160,6 @@ static int unref_addr (thread_data_t *td, unref_config_t *unref_config,
                                     v == gc_data->n_minimap - 1
                                     ? gc_data->n_addrs
                                     : (v + 1) * (PAGESIZE / sizeof(size_t)));
-            /*
-            int loc = deep_addr < addr
-                ? binary_search(deep_addr, addrs, 0, n)
-                : binary_search(deep_addr, addrs, n,
-                                unref_config->gc_data->n_addrs);
-            */
 
             if (is_ref(gc_data, loc, deep_addr)) {
 
@@ -224,7 +218,6 @@ static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
 
     unref_config.gc_data = gc_data;
     unref_config.min_val = gc_data->addrs[0];
-    // FIXME: max_val should change in the case of DEEP_REFERENCES.
     unref_config.max_val = gc_data->addrs[gc_data->n_addrs - 1];
 
     g_signal_mode = MODE_SWEEP;

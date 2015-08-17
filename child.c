@@ -49,13 +49,7 @@ static size_t g_bytes_to_scan;
 
 int is_ref (gc_data_t *gc_data, int loc, size_t cmp)
 {
-#ifdef DEEP_REFERENCES
-    return gc_data->addrs[loc] == cmp
-        || (gc_data->addrs[loc] < cmp
-            && gc_data->addrs[loc] + gc_data->alloc_sz[loc] > cmp);
-#else
     return gc_data->addrs[loc] == cmp;
-#endif
 }
 
 /****************************************************************************/
