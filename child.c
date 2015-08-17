@@ -231,12 +231,6 @@ static int collect_ranges (void *p,
             if (g_n_ranges >= MAX_RANGES) {
                 threadscan_fatal("Too many memory ranges.\n");
             }
-            /*
-            threadscan_diagnostic("  range: %lld KB\n", (int)
-                                  ((next.high - next.low) / (1024)));
-            g_ranges[g_n_ranges++] = next;
-            g_bytes_to_scan += next.high - next.low;
-            */
         }
     }
 
