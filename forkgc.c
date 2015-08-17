@@ -119,13 +119,6 @@ size_t rdtsc ()
     size_t ret = (size_t)(ts.tv_sec * (1000));
     ret += (size_t)(ts.tv_nsec / (1000 * 1000));
     return ret;
-    /*
-    unsigned int low, high;
-    size_t ret;
-    __asm__ ("rdtsc" : "=a" (low), "=d" (high));
-    ret = ((size_t)high) << 32;
-    return ret | low;
-    */
 }
 
 static int unref_addr (thread_data_t *td, unref_config_t *unref_config,
