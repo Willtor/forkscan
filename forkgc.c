@@ -258,7 +258,6 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
             if (write_position != i) {
                 gc_data->addrs[write_position] = gc_data->addrs[i];
                 gc_data->refs[write_position] = gc_data->refs[i];
-                gc_data->alloc_sz[write_position] = gc_data->alloc_sz[i];
             }
             if (gc_data->refs[write_position] == 0) {
                 // Node didn't get free'd because the search depth was
@@ -310,8 +309,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     // How many pages of memory are needed to store the minimap?
     size_t pages_of_minimap = ((pages_of_addrs * sizeof(size_t))
                                + PAGESIZE - sizeof(size_t)) / PAGESIZE;
-    // How many pages are needed to store the allocated size and reference
-    // count arrays?
+    // How many pages are needed to store the reference count array?
     size_t pages_of_count = ((n_addrs * sizeof(int))
                              + PAGESIZE - sizeof(int)) / PAGESIZE;
     // Total pages needed is the number of pages for the addresses, plus the
@@ -320,7 +318,6 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
         (char*)threadscan_alloc_mmap_shared((pages_of_addrs     // addr array.
                                              + pages_of_minimap // minimap.
                                              + pages_of_count   // ref count.
-                                             + pages_of_count   // alloc size.
                                              + 1)               // struct page.
                                             * PAGESIZE);
 
@@ -338,8 +335,6 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     ret->refs = (int*)(p + offset);
     offset += pages_of_count * PAGESIZE;
 
-    ret->alloc_sz = (int*)(p + offset);
-
     ret->n_addrs = n_addrs;
 
     // Copy the addresses over.
@@ -354,14 +349,6 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     threadscan_util_sort(ret->addrs, ret->n_addrs);
     assert_monotonicity(ret->addrs, ret->n_addrs);
     generate_minimap(ret);
-
-    // Get the size of each malloc'd block.
-    int i;
-    for (i = 0; i < ret->n_addrs; ++i) {
-        assert(ret->alloc_sz[i] == 0);
-        ret->alloc_sz[i] = 0; //MALLOC_USABLE_SIZE((void*)ret->addrs[i]);
-        //assert(ret->alloc_sz[i] > 0);
-    }
 
 #ifndef NDEBUG
     for (i = 0; i < ret->n_addrs; ++i) {

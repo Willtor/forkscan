@@ -35,7 +35,6 @@ struct gc_data_t {
     /////////////////////////////////////////// FIXME: unnecessary?
     size_t *minimap;
     int *refs;
-    int *alloc_sz;
     ///////////////////////////////////////////
     int n_addrs;
     int n_minimap; // unnecessary?
