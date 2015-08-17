@@ -208,7 +208,7 @@ static void *address_range (sweeper_work_t *work)
 
 #define ADDRS_PER_THREAD (128 * 1024)
 
-static int find_unreferenced_nodes (gc_data_t *gc_data, queue_t *commq)
+static int find_unreferenced_nodes (gc_data_t *gc_data)
 {
     unref_config_t unref_config;
     int sig_count;
@@ -416,7 +416,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     return ret;
 }
 
-static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
+static void garbage_collect (gc_data_t *gc_data)
 {
     gc_data_t *working_data;
     int sig_count;
@@ -477,7 +477,7 @@ static void garbage_collect (gc_data_t *gc_data, queue_t *commq)
     int iters = 0;
     do {
         ++iters;
-        unfinished = find_unreferenced_nodes(working_data, commq);
+        unfinished = find_unreferenced_nodes(working_data);
     } while (unfinished > 0);
 
     gc_data->n_addrs = 0;
@@ -585,11 +585,6 @@ void *forkgc_thread (void *ignored)
 {
     gc_data_t *gc_data;
 
-    // FIXME: Warning: Fragile code knows the size of a pointer and a page.
-    char *buffer = threadscan_alloc_mmap_shared(PAGESIZE * 9);
-    queue_t *commq = (queue_t*)buffer;
-    threadscan_queue_init(commq, (size_t*)&buffer[PAGESIZE], PAGESIZE);
-
     // Start thread pool.
     pthread_mutex_init(&g_sweeper_mutex, NULL);
     pthread_cond_init(&g_sweeper_cond, NULL);
@@ -633,7 +628,7 @@ void *forkgc_thread (void *ignored)
         threadscan_diagnostic("%d collects waiting.\n", n);
 #endif
 
-        garbage_collect(gc_data, commq);
+        garbage_collect(gc_data);
     }
 
     return NULL;
