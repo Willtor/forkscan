@@ -193,36 +193,6 @@ static int unref_addr (thread_data_t *td, unref_config_t *unref_config,
     return savings;
 }
 
-static int fib (int n) {
-    if (n < 2) return n;
-    int a = fib(n - 1);
-    int b = fib(n - 2);
-    return a + b;
-}
-
-static void give_to_random_thread (thread_list_t *tl, free_t *head,
-                                   free_t *tail)
-{
-    size_t cycles = (unsigned int)rdtsc();
-
-    pthread_mutex_lock(&tl->lock);
-    if (tl->count != 0) {
-        // tl->count could be zero if the program is about to exit.
-        size_t thread_num = cycles % tl->count;
-        thread_data_t *td = tl->head;
-        while (thread_num > 0) {
-            --thread_num;
-            td = td->next;
-            assert(td != NULL);
-        }
-        // CAS it in there.
-        do {
-            tail->next = td->free_list;
-        } while (!BCAS(&td->free_list, tail->next, head));
-    }
-    pthread_mutex_unlock(&tl->lock);
-}
-
 static void *address_range (sweeper_work_t *work)
 {
     thread_data_t *td = threadscan_thread_get_td();
@@ -239,58 +209,6 @@ static void *address_range (sweeper_work_t *work)
             }
         }
     }
-
-    /*
-    for (i = work->range_begin; i < work->range_end; ++i) {
-        if (gc_data->addrs[i] & 1) {
-            free_t *node = (free_t*)PTR_MASK(gc_data->addrs[i]);
-            FREE(node);
-        }
-    }
-    */
-    /*
-    // FIXME: Memory leak.  Nodes this thread has passed in the list may have
-    // their reference counts decremented by another thread, later.  This
-    // should be done during the sweep-proper.
-    thread_data_t *td = threadscan_thread_get_td();
-    for (i = work->range_begin; i < work->range_end; ++i) {
-        if (gc_data->addrs[i] & 1) {
-            free_t *node = (free_t*)PTR_MASK(gc_data->addrs[i]);
-            node->next = td->free_list;
-            td->free_list = node;
-        }
-    }
-    */
-    /*
-    // Distribute nodes among threads.
-    thread_list_t *tl = threadscan_proc_get_thread_list();
-    int n_threads = tl->count; // Benign race.  Includes main().
-    if (n_threads == 0) return NULL; // Program must be about to exit.
-    int nodes_per_chunk = savings / n_threads;
-    if (nodes_per_chunk < SAVINGS_THRESHOLD) {
-        nodes_per_chunk = MIN_OF(savings, SAVINGS_THRESHOLD);
-    }
-    int in_this_chunk = 0;
-    free_t *head = NULL, *tail = NULL;
-    for (i = work->range_begin; i < work->range_end; ++i) {
-        if (gc_data->addrs[i] & 1) {
-            free_t *node = (free_t*)PTR_MASK(gc_data->addrs[i]);
-            if (NULL == tail) {
-                tail = head = node;
-            } else {
-                node->next = head;
-                head = node;
-            }
-            ++in_this_chunk;
-            if (in_this_chunk >= nodes_per_chunk) {
-                assert(in_this_chunk == nodes_per_chunk);
-                give_to_random_thread(tl, head, tail);
-                in_this_chunk = 0;
-                head = tail = NULL;
-            }
-        }
-    }
-    */
     return NULL;
 }
 
@@ -767,7 +685,7 @@ void forkgc_print_statistics ()
     printf("ave-fork-time: %d\n",
            g_cleanup_counter == 0 ? 0
            : ((int)(g_total_fork_time / g_cleanup_counter)));
-    printf("ave-sweep-time: %llu\n", g_sweep_counter > 0
+    printf("ave-sweep-time: %zu\n", g_sweep_counter > 0
            ? g_total_sweep_time / g_sweep_counter : 0);
 }
 
