@@ -106,9 +106,6 @@ static size_t g_scan_max;
 static double g_total_fork_time;
 static pid_t child_pid;
 
-static pthread_mutex_t g_sweeper_mutex;
-static pthread_cond_t g_sweeper_cond;
-static volatile int g_sweepers_sleeping;
 static volatile int g_sweepers_working;
 static volatile int g_sweepers_remaining;
 static sweeper_work_t g_sweeper_work[MAX_SWEEPER_THREADS];
@@ -282,40 +279,6 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
     gc_data->n_addrs = write_position;
 
     return 0; // unfinished; // ALEX
-}
-
-static void *sweeper_thread (void *arg)
-{
-    while ((1)) {
-        // Wait for sweeping phase.
-        pthread_mutex_lock(&g_sweeper_mutex);
-        ++g_sweepers_sleeping;
-        pthread_cond_wait(&g_sweeper_cond, &g_sweeper_mutex);
-        --g_sweepers_sleeping;
-        pthread_mutex_unlock(&g_sweeper_mutex);
-
-        threadscan_fatal("Bad news, yo... bad news.\n");
-
-        // Perform sweep.
-        int id = __sync_fetch_and_add(&g_sweepers_working, 1);
-        address_range(&g_sweeper_work[id]);
-        int done = __sync_fetch_and_sub(&g_sweepers_remaining, 1) - 1;
-
-        // See if we're the last one.
-        if (done == 0) {
-            // Last one out.  Signal the GC thread.
-            pthread_mutex_lock(&g_gc_mutex);
-            assert(g_gc_waiting != GC_WAITING_FOR_WORK);
-            if (g_gc_waiting == GC_WAITING_FOR_SWEEPERS) {
-                pthread_cond_signal(&g_gc_cond);
-            } else {
-                g_gc_waiting = GC_DONT_WAIT_FOR_SWEEPERS;
-            }
-            pthread_mutex_unlock(&g_gc_mutex);
-        }
-    }
-    threadscan_fatal("Internal error: Unreachable code.\n");
-    return NULL;
 }
 
 static void generate_minimap (gc_data_t *gc_data)
@@ -584,20 +547,6 @@ void forkgc_initiate_collection (gc_data_t *gc_data)
 void *forkgc_thread (void *ignored)
 {
     gc_data_t *gc_data;
-
-    // Start thread pool.
-    pthread_mutex_init(&g_sweeper_mutex, NULL);
-    pthread_cond_init(&g_sweeper_cond, NULL);
-    // FIXME: orig_* functions should get passed in.
-    extern int (*orig_pthread_create) (pthread_t *, const pthread_attr_t *,
-                                       void *(*) (void *), void *);
-    int i;
-    for (i = 0; i < g_forkgc_sweeper_thread_count; ++i) {
-        pthread_t tid;
-        if (0 != orig_pthread_create(&tid, NULL, sweeper_thread, NULL)) {
-            threadscan_fatal("Unable to create sweeper thread.\n");
-        }
-    }
 
     while ((1)) {
         pthread_mutex_lock(&g_gc_mutex);
