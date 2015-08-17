@@ -96,7 +96,6 @@ static void do_search (size_t *mem, size_t range_size, gc_data_t *gc_data)
         // PTR_MASK catches pointers that have been hidden through overloading
         // the two low-order bits.
 
-        // FIXME: Makes it too fast!
         if (cmp < min_ptr || cmp > max_ptr) continue; // Out-of-range.
 
         // Level 1 search: Find the page the address would be on.
