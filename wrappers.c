@@ -174,7 +174,7 @@ void pthread_exit (void *retval)
     exit_wrapper(retval);
 }
 
-void threadscan_pthread_exit (void *retval)
+void forkgc_pthread_exit (void *retval)
 {
     exit_wrapper(retval);
 }

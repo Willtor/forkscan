@@ -83,8 +83,8 @@ void *forkgc_thread_base (void *arg)
     // Note: Have to use the "forkgc_" version of pthread_exit() since it
     // sometimes binds the wrong pthread_exit() on some systems.  Not clear
     // why...
-    extern void threadscan_pthread_exit (void *);
-    threadscan_pthread_exit(td->user_routine(td->user_arg));
+    extern void forkgc_pthread_exit (void *);
+    forkgc_pthread_exit(td->user_routine(td->user_arg));
 
     assert(0); // Should never get past pthread_exit().
     return 0;
