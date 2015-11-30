@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -47,7 +47,7 @@ static thread_data_t *g_td_staged_to_free = NULL;
 /*                       Storage for per-thread data.                       */
 /****************************************************************************/
 
-thread_data_t *threadscan_util_thread_data_new ()
+thread_data_t *forkgc_util_thread_data_new ()
 {
     char *memblock = (char*)forkgc_alloc_mmap(MEMBLOCK_SIZE);
     size_t *local_list =
@@ -61,7 +61,7 @@ thread_data_t *threadscan_util_thread_data_new ()
     return td;
 }
 
-void threadscan_util_thread_data_decr_ref (thread_data_t *td)
+void forkgc_util_thread_data_decr_ref (thread_data_t *td)
 {
     if (0 == __sync_fetch_and_sub(&td->ref_count, 1) - 1) {
         pthread_mutex_lock(&g_staged_lock);
@@ -71,7 +71,7 @@ void threadscan_util_thread_data_decr_ref (thread_data_t *td)
     }
 }
 
-void threadscan_util_thread_data_free (thread_data_t *td)
+void forkgc_util_thread_data_free (thread_data_t *td)
 {
     assert(td);
     assert(td->ref_count == 0);
@@ -83,7 +83,7 @@ void threadscan_util_thread_data_free (thread_data_t *td)
     forkgc_alloc_munmap(td);
 }
 
-void threadscan_util_thread_data_cleanup (pthread_t tid)
+void forkgc_util_thread_data_cleanup (pthread_t tid)
 {
     thread_data_t *td, *last = NULL;
 
@@ -104,18 +104,18 @@ void threadscan_util_thread_data_cleanup (pthread_t tid)
     pthread_mutex_unlock(&g_staged_lock);
 
     if (td->ref_count > 0) {
-        threadscan_fatal("threadscan: "
-                         "detected data race on exiting thread.\n");
+        forkgc_fatal("ForkGC: "
+                     "detected data race on exiting thread.\n");
     }
 
     if (td->stack_is_ours) {
         forkgc_alloc_munmap(td->user_stack_low);
     }
 
-    threadscan_util_thread_data_free(td);
+    forkgc_util_thread_data_free(td);
 }
 
-void threadscan_util_thread_list_init (thread_list_t *tl)
+void forkgc_util_thread_list_init (thread_list_t *tl)
 {
     assert(tl);
     if (tl->head == NULL) {
@@ -125,7 +125,7 @@ void threadscan_util_thread_list_init (thread_list_t *tl)
     }
 }
 
-void threadscan_util_thread_list_add (thread_list_t *tl, thread_data_t *td)
+void forkgc_util_thread_list_add (thread_list_t *tl, thread_data_t *td)
 {
     assert(tl); assert(td);
     pthread_mutex_lock(&tl->lock);
@@ -135,7 +135,7 @@ void threadscan_util_thread_list_add (thread_list_t *tl, thread_data_t *td)
     pthread_mutex_unlock(&tl->lock);
 }
 
-void threadscan_util_thread_list_remove (thread_list_t *tl, thread_data_t *td)
+void forkgc_util_thread_list_remove (thread_list_t *tl, thread_data_t *td)
 {
     thread_data_t *tmp;
     assert(tl); assert(td);
@@ -156,7 +156,7 @@ void threadscan_util_thread_list_remove (thread_list_t *tl, thread_data_t *td)
     pthread_mutex_unlock(&tl->lock);
 }
 
-thread_data_t *threadscan_util_thread_list_find (thread_list_t *tl, size_t addr)
+thread_data_t *forkgc_util_thread_list_find (thread_list_t *tl, size_t addr)
 {
     thread_data_t *ret;
 
@@ -177,7 +177,7 @@ thread_data_t *threadscan_util_thread_list_find (thread_list_t *tl, size_t addr)
 /*                              I/O functions.                              */
 /****************************************************************************/
 
-int threadscan_diagnostic (const char *format, ...)
+int forkgc_diagnostic (const char *format, ...)
 {
     va_list arg;
     int ret;
@@ -191,7 +191,7 @@ int threadscan_diagnostic (const char *format, ...)
     return ret;
 }
 
-void threadscan_fatal (const char *format, ...)
+void forkgc_fatal (const char *format, ...)
 {
     va_list arg;
 
@@ -264,7 +264,7 @@ static void quicksort (size_t *addrs, int min, int max)
  * Sort the array, a, of the given length from lowest to highest.  The sort
  * happens in-place.
  */
-void threadscan_util_sort (size_t *a, int length)
+void forkgc_util_sort (size_t *a, int length)
 {
     quicksort(a, 0, length - 1);
 }
@@ -272,7 +272,7 @@ void threadscan_util_sort (size_t *a, int length)
 /**
  * Randomize the ordering of an array of addrs (of length n) in place.
  */
-void threadscan_util_randomize (size_t *addrs, int n)
+void forkgc_util_randomize (size_t *addrs, int n)
 {
     unsigned int i;
     for (i = 0; i < n; ++i) {

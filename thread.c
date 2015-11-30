@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -32,22 +32,22 @@ THE SOFTWARE.
 #include "util.h"
 
 /**
- * Thread-local reference to threadscan's per-thread data.
+ * Thread-local reference to ForkGC's per-thread data.
  */
-__thread thread_data_t *threadscan_local_td;
+__thread thread_data_t *forkgc_local_td;
 
 /**
  * Return the local metadata for this thread.
  */
-thread_data_t *threadscan_thread_get_td () { return threadscan_local_td; }
+thread_data_t *forkgc_thread_get_td () { return forkgc_local_td; }
 
 /**
  * Base routine of all threads that are created in the process.  The wrapper
  * for pthread_create() will call this function instead of the one the user
- * requested.  This allows us to hook each thread into the threadscan system
- * as it is made.  Then we call the user routine.
+ * requested.  This allows us to hook each thread into the ForkGC system as
+ * it is made.  Then we call the user routine.
  */
-void *threadscan_thread_base (void *arg)
+void *forkgc_thread_base (void *arg)
 {
     thread_data_t *td = (thread_data_t*)arg;
     size_t sp, buffer_size;
@@ -70,7 +70,7 @@ void *threadscan_thread_base (void *arg)
     td->user_stack_high = (char*)(sp - buffer_size);
 
     // Put the thread metadata into TLS.
-    threadscan_local_td = td;
+    forkgc_local_td = td;
 
     // Counter for getting consensus during cleanup.
     td->local_timestamp = 0;
@@ -80,7 +80,7 @@ void *threadscan_thread_base (void *arg)
     td->is_active = 1;
 
     // Call the user thread.  Exit with the return code when complete.
-    // Note: Have to use the "threadscan_" version of pthread_exit() since it
+    // Note: Have to use the "forkgc_" version of pthread_exit() since it
     // sometimes binds the wrong pthread_exit() on some systems.  Not clear
     // why...
     extern void threadscan_pthread_exit (void *);
@@ -93,37 +93,37 @@ void *threadscan_thread_base (void *arg)
 /**
  * Do metadata cleanup for the thread before it exits.
  */
-void threadscan_thread_cleanup ()
+void forkgc_thread_cleanup ()
 {
-    thread_data_t *td = threadscan_local_td;
+    thread_data_t *td = forkgc_local_td;
     assert(td);
     td->is_active = 0;
-    threadscan_proc_remove_thread_data(td);
-    threadscan_util_thread_data_decr_ref(td);
+    forkgc_proc_remove_thread_data(td);
+    forkgc_util_thread_data_decr_ref(td);
 }
 
 /**
  * Send the given signal to all threads in the process and return the number
  * of signals sent.
  */
-int threadscan_thread_signal_all_but_me (int sig)
+int forkgc_thread_signal_all_but_me (int sig)
 {
     thread_data_t *me;
 
-    me = threadscan_local_td;
+    me = forkgc_local_td;
     assert(me);
 
-    return threadscan_proc_signal_all_except(sig, me);
+    return forkgc_proc_signal_all_except(sig, me);
 }
 
 /**
  * Return the address range of the stack where the user has (or might have)
  * data.
  */
-mem_range_t threadscan_thread_user_stack ()
+mem_range_t forkgc_thread_user_stack ()
 {
     mem_range_t ret;
-    thread_data_t *td = threadscan_local_td;
+    thread_data_t *td = forkgc_local_td;
 
     ret.low = (size_t)td->user_stack_low;
     ret.high = (size_t)td->user_stack_high;
@@ -136,10 +136,10 @@ static volatile size_t global_timestamp = 1;
 /**
  * Raise the "helping" flag for this thread.
  */
-void threadscan_thread_cleanup_raise_flag ()
+void forkgc_thread_cleanup_raise_flag ()
 {
-    assert(threadscan_local_td != NULL);
-    thread_data_t *td = threadscan_local_td;
+    assert(forkgc_local_td != NULL);
+    thread_data_t *td = forkgc_local_td;
     size_t old_timestamp = td->local_timestamp;
     int updated;
 
@@ -169,9 +169,9 @@ void threadscan_thread_cleanup_raise_flag ()
 /**
  * Lower the "helping" flag for this thread.
  */
-void threadscan_thread_cleanup_lower_flag ()
+void forkgc_thread_cleanup_lower_flag ()
 {
-    thread_data_t *td = threadscan_local_td;
+    thread_data_t *td = forkgc_local_td;
     // Nothing needs to be atomic.  Only one thread ever writes to this.
     td->local_timestamp = TIMESTAMP(td->local_timestamp);
 }
@@ -179,7 +179,7 @@ void threadscan_thread_cleanup_lower_flag ()
 /**
  * Try to become the reclaimer.  Return true if successful, false otherwise.
  */
-int threadscan_thread_cleanup_try_acquire ()
+int forkgc_thread_cleanup_try_acquire ()
 {
     size_t old_timestamp = global_timestamp;
     if (TIMESTAMP_IS_ACTIVE(old_timestamp)) return 0;
@@ -192,14 +192,14 @@ int threadscan_thread_cleanup_try_acquire ()
 
     // We have the critical section and are the new cleanup thread.  Wait
     // for all threads that are trying to "help out" to acknowledge this.
-    threadscan_proc_wait_for_timestamp(TIMESTAMP(attempt));
+    forkgc_proc_wait_for_timestamp(TIMESTAMP(attempt));
     return 1;
 }
 
 /**
  * Give up reclaimer lock.
  */
-void threadscan_thread_cleanup_release ()
+void forkgc_thread_cleanup_release ()
 {
     global_timestamp = TIMESTAMP(global_timestamp);
 }

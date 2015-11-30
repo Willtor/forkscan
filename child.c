@@ -228,7 +228,7 @@ static int collect_ranges (void *p,
             }
             g_ranges[g_n_ranges++] = next;
             if (g_n_ranges >= MAX_RANGES) {
-                threadscan_fatal("Too many memory ranges.\n");
+                forkgc_fatal("Too many memory ranges.\n");
             }
         }
     }
@@ -240,7 +240,7 @@ void forkgc_child (gc_data_t *gc_data, int fd)
 {
     // Scan memory for references.
     g_bytes_to_scan = 0;
-    threadscan_proc_map_iterate(collect_ranges, NULL);
+    forkgc_proc_map_iterate(collect_ranges, NULL);
     gc_data->completed_children = 0;
 
     int n_siblings = MIN_OF(MAX_CHILDREN,
@@ -266,7 +266,7 @@ void forkgc_child (gc_data_t *gc_data, int fd)
         == __sync_fetch_and_add(&gc_data->completed_children, 1)) {
         // Last process out.  Alert the uber parent.
         if (sizeof(size_t) != write(fd, &g_bytes_to_scan, sizeof(size_t))) {
-            threadscan_fatal("Failed to write to parent.\n");
+            forkgc_fatal("Failed to write to parent.\n");
         }
     }
 }

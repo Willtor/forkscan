@@ -54,10 +54,10 @@ static void __assert_monotonicity (size_t *a, int n, const char *f, int line)
     int i;
     for (i = 0; i < n; ++i) {
         if (a[i] <= last) {
-            threadscan_diagnostic("Error at %s:%d\n", f, line);
-            threadscan_fatal("The list is not monotonic at position %d "
-                             "out of %d (%llu, last: %llu)\n",
-                             i, n, a[i], last);
+            forkgc_diagnostic("Error at %s:%d\n", f, line);
+            forkgc_fatal("The list is not monotonic at position %d "
+                         "out of %d (%llu, last: %llu)\n",
+                         i, n, a[i], last);
         }
         last = a[i];
     }
@@ -179,7 +179,7 @@ static int unref_addr (thread_data_t *td, unref_config_t *unref_config,
 
 static void *address_range (sweeper_work_t *work)
 {
-    thread_data_t *td = threadscan_thread_get_td();
+    thread_data_t *td = forkgc_thread_get_td();
     gc_data_t *gc_data = work->unref_config->gc_data;
     int savings = 0;
     int i;
@@ -213,7 +213,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
     g_signal_mode = MODE_SWEEP;
     g_received_signal = 0;
     start = rdtsc();
-    sig_count = threadscan_proc_signal(SIGFORKGC);
+    sig_count = forkgc_proc_signal(SIGFORKGC);
     if (sig_count == 0) return 0; // Program is about to exit.
     addrs_per_thread = gc_data->n_addrs / sig_count;
 
@@ -346,7 +346,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     } while ((tmp = tmp->next));
 
     // Sort the addresses and generate the minimap for the scanner.
-    threadscan_util_sort(ret->addrs, ret->n_addrs);
+    forkgc_util_sort(ret->addrs, ret->n_addrs);
     assert_monotonicity(ret->addrs, ret->n_addrs);
     generate_minimap(ret);
 
@@ -378,7 +378,7 @@ static void garbage_collect (gc_data_t *gc_data)
 
     // Open a pipe for communication between parent and child.
     if (0 != pipe2(pipefd, O_DIRECT)) {
-        threadscan_fatal("GC thread was unable to open a pipe.\n");
+        forkgc_fatal("GC thread was unable to open a pipe.\n");
     }
 
     // Send out signals.  When everybody is waiting at the line, fork the
@@ -387,12 +387,12 @@ static void garbage_collect (gc_data_t *gc_data)
     g_signal_mode = MODE_SNAPSHOT;
     g_received_signal = 0;
     start = rdtsc();
-    sig_count = threadscan_proc_signal(SIGFORKGC);
+    sig_count = forkgc_proc_signal(SIGFORKGC);
     while (g_received_signal < sig_count) pthread_yield();
     child_pid = fork();
 
     if (child_pid == -1) {
-        threadscan_fatal("Collection failed (fork).\n");
+        forkgc_fatal("Collection failed (fork).\n");
     } else if (child_pid == 0) {
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
@@ -411,7 +411,7 @@ static void garbage_collect (gc_data_t *gc_data)
     size_t bytes_scanned;
     if (sizeof(size_t) != read(pipefd[PIPE_READ], &bytes_scanned,
                                sizeof(size_t))) {
-        threadscan_fatal("Failed to read from child.\n");
+        forkgc_fatal("Failed to read from child.\n");
     }
     if (bytes_scanned > g_scan_max) g_scan_max = bytes_scanned;
 
@@ -554,7 +554,7 @@ void *forkgc_thread (void *ignored)
         int n = 1;
         gc_data_t *tmp = gc_data;
         while (NULL != (tmp = tmp->next)) ++n;
-        threadscan_diagnostic("%d collects waiting.\n", n);
+        forkgc_diagnostic("%d collects waiting.\n", n);
 #endif
 
         garbage_collect(gc_data);
@@ -574,7 +574,7 @@ void forkgc_print_statistics ()
 
     fp = fopen("/proc/self/statm", "r");
     if (NULL == fp) {
-        threadscan_fatal("Unable to open /proc/self/statm.\n");
+        forkgc_fatal("Unable to open /proc/self/statm.\n");
     }
     bytes_read = fread(statm, 1, 255, fp);
     statm[statm[bytes_read - 1] == '\n'

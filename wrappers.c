@@ -92,14 +92,14 @@ int pthread_create (pthread_t *thread,
 
     if (MAX_THREAD_COUNT < __sync_fetch_and_add(&g_thread_count, 1)) {
         // Don't overflow buffers.
-        threadscan_fatal("Exceeded maximum thread count (%d).\n",
+        forkgc_fatal("Exceeded maximum thread count (%d).\n",
                          MAX_THREAD_COUNT);
     }
 
     // Wrap the user data.
-    td = threadscan_util_thread_data_new();
+    td = forkgc_util_thread_data_new();
     if (NULL == td) {
-        threadscan_fatal("threadscan: Out of memory.\n");
+        forkgc_fatal("threadscan: Out of memory.\n");
     }
     td->user_routine = start_routine;
     td->user_arg = arg;
@@ -111,7 +111,7 @@ int pthread_create (pthread_t *thread,
     if (NULL == attr) {
         ret = pthread_attr_init(&real_attr);
         if (0 != ret) {
-            threadscan_fatal("threadscan: could not create thread.\n");
+            forkgc_fatal("threadscan: could not create thread.\n");
         }
     } else {
         real_attr = *attr;
@@ -119,7 +119,7 @@ int pthread_create (pthread_t *thread,
 
     ret = pthread_attr_getstack(&real_attr, &stack, &stacksize);
     if (0 != ret) {
-        threadscan_fatal("threadscan: unable to get stack attributes.\n");
+        forkgc_fatal("threadscan: unable to get stack attributes.\n");
     }
 
     if (NULL == stack) {
@@ -128,7 +128,7 @@ int pthread_create (pthread_t *thread,
         stack = forkgc_alloc_mmap(stacksize);
         ret = pthread_attr_setstack(&real_attr, stack, stacksize);
         if (0 != ret) {
-            threadscan_fatal("threadscan: unable to set stack attributes.\n");
+            forkgc_fatal("threadscan: unable to set stack attributes.\n");
         }
         td->stack_is_ours = 1;
     }
@@ -137,11 +137,11 @@ int pthread_create (pthread_t *thread,
     td->user_stack_high = (char*)stack + stacksize;
 
     // Insert the metadata into the global structure.
-    threadscan_proc_add_thread_data(td);
+    forkgc_proc_add_thread_data(td);
 
     // Try to create the thread.
     ret = orig_pthread_create(thread, &real_attr,
-                              threadscan_thread_base, (void*)td);
+                              forkgc_thread_base, (void*)td);
 
     if (0 != ret) {
         // Ruh, roh!  Failed to create a thread.  That isn't really our
@@ -150,7 +150,7 @@ int pthread_create (pthread_t *thread,
         if (td->stack_is_ours) {
             forkgc_alloc_munmap(stack);
         }
-        threadscan_util_thread_data_free(td);
+        forkgc_util_thread_data_free(td);
     }
 
     return ret;
@@ -161,7 +161,7 @@ static void exit_wrapper (void *retval)
 {
     assert(orig_pthread_exit);
 
-    threadscan_thread_cleanup();
+    forkgc_thread_cleanup();
     __sync_fetch_and_sub(&g_thread_count, 1);
     orig_pthread_exit(retval);
 
@@ -184,7 +184,7 @@ int pthread_join (pthread_t thread, void **retval)
 {
     assert(orig_pthread_join);
     int ret = orig_pthread_join(thread, retval);
-    threadscan_util_thread_data_cleanup(thread);
+    forkgc_util_thread_data_cleanup(thread);
     return ret;
 }
 
@@ -209,21 +209,21 @@ static void *main_thunk (void *arg)
 
 static int main_replacement (int argc, char **argv, char **env)
 {
-    thread_data_t *td = threadscan_util_thread_data_new();
+    thread_data_t *td = forkgc_util_thread_data_new();
     mem_range_t stack_data;
     main_args_t main_args = { argc, argv, env };
     if (NULL == td) {
-        threadscan_fatal("threadscan: Out of memory.\n");
+        forkgc_fatal("threadscan: Out of memory.\n");
     }
     td->user_routine = main_thunk;
     td->user_arg = &main_args;
-    threadscan_proc_stack_from_addr(&stack_data, (size_t)&stack_data);
+    forkgc_proc_stack_from_addr(&stack_data, (size_t)&stack_data);
     td->user_stack_low = (char*)stack_data.low;
 
     // Insert the metadata into the global structure.
-    threadscan_proc_add_thread_data(td);
+    forkgc_proc_add_thread_data(td);
 
-    threadscan_thread_base(td);
+    forkgc_thread_base(td);
     assert(0); // Should not return.  It should die in main_thunk().
     return 0;
 }
@@ -239,7 +239,7 @@ int __libc_start_main(int (*main) (int, char **, char **),
     pthread_t tid;
     int ret = orig_pthread_create(&tid, NULL, forkgc_thread, NULL);
     if (0 != ret) {
-        threadscan_fatal("Unable to start garbage collector.\n");
+        forkgc_fatal("Unable to start garbage collector.\n");
         // Does not return.
     }
 

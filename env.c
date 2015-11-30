@@ -79,18 +79,18 @@ static void env_init ()
 
         // Bounds-checking.
         if (ptrs_per_thread < MIN_PTRS_PER_THREAD) {
-            threadscan_diagnostic("warning: %s = %s\n"
-                                  "  But min value is %d\n",
-                                  env_ptrs_per_thread,
-                                  getenv(env_ptrs_per_thread),
-                                  MIN_PTRS_PER_THREAD / 1024);
+            forkgc_diagnostic("warning: %s = %s\n"
+                              "  But min value is %d\n",
+                              env_ptrs_per_thread,
+                              getenv(env_ptrs_per_thread),
+                              MIN_PTRS_PER_THREAD / 1024);
             ptrs_per_thread = MIN_PTRS_PER_THREAD;
         } else if (ptrs_per_thread > MAX_PTRS_PER_THREAD) {
-            threadscan_diagnostic("warning: %s = %s\n"
-                                  "  But max value is %d\n",
-                                  env_ptrs_per_thread,
-                                  getenv(env_ptrs_per_thread),
-                                  MAX_PTRS_PER_THREAD / 1024);
+            forkgc_diagnostic("warning: %s = %s\n"
+                              "  But max value is %d\n",
+                              env_ptrs_per_thread,
+                              getenv(env_ptrs_per_thread),
+                              MAX_PTRS_PER_THREAD / 1024);
             ptrs_per_thread = MAX_PTRS_PER_THREAD;
         }
 

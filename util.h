@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -105,7 +105,7 @@ struct thread_data_t {
     char *user_stack_low;     // Low address on the user stack.
     char *user_stack_high;    // Actually, just the high address to lock.
 
-    int stack_is_ours;        // Whether threadscan allocated the stack.
+    int stack_is_ours;        // Whether ForkGC allocated the stack.
     int is_active;            // The thread is running user code.
 
     queue_t ptr_list;         // Local list of pointers to be collected.
@@ -127,29 +127,29 @@ struct thread_list_t {
     unsigned int count; // Number of threads.
 };
 
-thread_data_t *threadscan_util_thread_data_new ();
-void threadscan_util_thread_data_decr_ref (thread_data_t *td);
-void threadscan_util_thread_data_free (thread_data_t *td);
-void threadscan_util_thread_data_cleanup (pthread_t tid);
+thread_data_t *forkgc_util_thread_data_new ();
+void forkgc_util_thread_data_decr_ref (thread_data_t *td);
+void forkgc_util_thread_data_free (thread_data_t *td);
+void forkgc_util_thread_data_cleanup (pthread_t tid);
 
-void threadscan_util_thread_list_init (thread_list_t *tl);
-void threadscan_util_thread_list_add (thread_list_t *tl, thread_data_t *td);
-void threadscan_util_thread_list_remove (thread_list_t *tl, thread_data_t *td);
-thread_data_t *threadscan_util_thread_list_find (thread_list_t *tl,
+void forkgc_util_thread_list_init (thread_list_t *tl);
+void forkgc_util_thread_list_add (thread_list_t *tl, thread_data_t *td);
+void forkgc_util_thread_list_remove (thread_list_t *tl, thread_data_t *td);
+thread_data_t *forkgc_util_thread_list_find (thread_list_t *tl,
                                                  size_t addr);
 
 /****************************************************************************/
 /*                              I/O functions.                              */
 /****************************************************************************/
 
-int threadscan_diagnostic (const char *format, ...);
-void threadscan_fatal (const char *format, ...);
+int forkgc_diagnostic (const char *format, ...);
+void forkgc_fatal (const char *format, ...);
 
 /****************************************************************************/
 /*                              Sort utility.                               */
 /****************************************************************************/
 
-void threadscan_util_randomize (size_t *addrs, int n);
-void threadscan_util_sort (size_t *a, int length);
+void forkgc_util_randomize (size_t *addrs, int n);
+void forkgc_util_sort (size_t *a, int length);
 
 #endif // !defined _UTIL_H_

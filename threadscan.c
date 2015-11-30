@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -77,7 +77,7 @@ static __thread int g_waiting_to_fork = 0;
 static void generate_working_pointers_list (gc_data_t *gc_data)
 {
     int n = 0;
-    thread_list_t *thread_list = threadscan_proc_get_thread_list();
+    thread_list_t *thread_list = forkgc_proc_get_thread_list();
     thread_data_t *td;
 
     // Add the pointers from each of the individual thread buffers.
@@ -89,7 +89,7 @@ static void generate_working_pointers_list (gc_data_t *gc_data)
     ENDFOREACH_IN_THREAD_LIST(td, thread_list);
 
     gc_data->n_addrs = n;
-    assert(!forkgc_queue_is_full(&threadscan_thread_get_td()->ptr_list));
+    assert(!forkgc_queue_is_full(&forkgc_thread_get_td()->ptr_list));
 }
 
 /****************************************************************************/
@@ -115,7 +115,7 @@ static void threadscan_reclaim ()
 
     // Give the list to the gc thread, signaling it if it's asleep.
     forkgc_initiate_collection(gc_data);
-    threadscan_thread_cleanup_release();
+    forkgc_thread_cleanup_release();
 }
 
 /**
@@ -128,17 +128,17 @@ __attribute__((visibility("default")))
 void threadscan_collect (void *ptr)
 {
     if (NULL == ptr) {
-        threadscan_diagnostic("Tried to collect NULL.\n");
+        forkgc_diagnostic("Tried to collect NULL.\n");
         return;
     }
 
-    thread_data_t *td = threadscan_thread_get_td();
+    thread_data_t *td = forkgc_thread_get_td();
     forkgc_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
     while (forkgc_queue_is_full(&td->ptr_list)) {
         // While this thread's local queue of pointers is full, try to initiate
         // reclamation.
 
-        threadscan_thread_cleanup_try_acquire()
+        forkgc_thread_cleanup_try_acquire()
             ? threadscan_reclaim() // reclaim() will release the cleanup lock.
             : pthread_yield();
     }
@@ -171,7 +171,7 @@ void *automalloc (size_t size)
     p = MALLOC(size);
 
     // Free a couple pointers, if we have them.
-    free_ptrs(threadscan_thread_get_td());
+    free_ptrs(forkgc_thread_get_td());
     g_in_malloc = 0;
 
     if (g_waiting_to_fork) {
@@ -208,7 +208,7 @@ static void register_signal_handlers ()
     /* We signal threads to get them to stop while we prepare a snapshot
        on the cleanup thread. */
     if (signal(SIGFORKGC, signal_handler) == SIG_ERR) {
-        threadscan_fatal("threadscan: Unable to register signal handler.\n");
+        forkgc_fatal("threadscan: Unable to register signal handler.\n");
     }
 
     g_tsdata.max_ptrs = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;

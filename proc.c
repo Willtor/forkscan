@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -68,9 +68,9 @@ static thread_list_t thread_list = { (thread_data_t*)0x1,
 
 /**
  * Return the list of thread metadata objects for all the threads known to
- * threadscan.
+ * ForkGC.
  */
-thread_list_t *threadscan_proc_get_thread_list () { return &thread_list; }
+thread_list_t *forkgc_proc_get_thread_list () { return &thread_list; }
 
 /**
  * Path to the maps file for this process: /proc/<pid>/maps
@@ -100,8 +100,8 @@ static int read_mapline (FILE *fp, mapline_t *m)
             // EOF.  Don't know why this happens, sometimes...
             return 0;
         }
-        threadscan_fatal("threadscan internal error: "
-                         "fscanf returned %d (expected 7)\n", n);
+        forkgc_fatal("threadscan internal error: "
+                     "fscanf returned %d (expected 7)\n", n);
     } else {
         char c;
         while (' ' == (c = fgetc(fp)));
@@ -109,9 +109,9 @@ static int read_mapline (FILE *fp, mapline_t *m)
             m->path[0] = c;
             n = fscanf(fp, "%s", &m->path[1]); // FIXME: not safe.
             if (n != 1) {
-                threadscan_fatal("threadscan internal error: "
-                                 "fscanf returned %d (expected 1)\n",
-                                 n);
+                forkgc_fatal("threadscan internal error: "
+                             "fscanf returned %d (expected 1)\n",
+                             n);
             }
             while ('\n' != (c = fgetc(fp)));
         }
@@ -127,7 +127,7 @@ static int read_mapline (FILE *fp, mapline_t *m)
  * Given an address, find the bounds of the stack on which it lives.  The
  * mem_range is populated based on the results.
  */
-void threadscan_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
+void forkgc_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
 {
     FILE *fp;
     mapline_t mapline;
@@ -138,7 +138,7 @@ void threadscan_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
     mem_range->low = mem_range->high = 0;
 
     if (NULL == (fp = fopen(procmap, "r"))) {
-        threadscan_fatal("threadscan: unable to open memory map file.\n");
+        forkgc_fatal("threadscan: unable to open memory map file.\n");
     }
 
     while (read_mapline(fp, &mapline)) {
@@ -153,7 +153,7 @@ void threadscan_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
     fclose(fp);
 }
 
-void threadscan_proc_map_iterate (int (*f) (void *arg,
+void forkgc_proc_map_iterate (int (*f) (void *arg,
                                             size_t begin,
                                             size_t end,
                                             const char *bits,
@@ -164,7 +164,7 @@ void threadscan_proc_map_iterate (int (*f) (void *arg,
     mapline_t mapline;
 
     if (NULL == (fp = fopen(procmap, "r"))) {
-        threadscan_fatal("threadscan: unable to open memory map file.\n");
+        forkgc_fatal("threadscan: unable to open memory map file.\n");
     }
 
     while (read_mapline(fp, &mapline)) {
@@ -185,31 +185,31 @@ void threadscan_proc_map_iterate (int (*f) (void *arg,
 /*                             Per-thread data                              */
 /****************************************************************************/
 
-/**    threadscan_diagnostic("Done searching.\n");
- * Threads call this to register themselves with threadscan when they start.
+/**
+ * Threads call this to register themselves with ForkGC when they start.
  */
-void threadscan_proc_add_thread_data (thread_data_t *td)
+void forkgc_proc_add_thread_data (thread_data_t *td)
 {
     // The list initialization will only actually happen if this is the
     // first time.
-    threadscan_util_thread_list_init(&thread_list);
-    threadscan_util_thread_list_add(&thread_list, td);
+    forkgc_util_thread_list_init(&thread_list);
+    forkgc_util_thread_list_add(&thread_list, td);
 }
 
 /**
  * Threads call this when they are going away.  It unregisters them with the
- * threadscan.
+ * ForkGC.
  */
-void threadscan_proc_remove_thread_data (thread_data_t *td)
+void forkgc_proc_remove_thread_data (thread_data_t *td)
 {
-    threadscan_util_thread_list_remove(&thread_list, td);
+    forkgc_util_thread_list_remove(&thread_list, td);
 }
 
 /**
  * Send a signal to all threads in the process (except the calling thread)
  * using pthread_kill().
  */
-int threadscan_proc_signal_all_except (int sig, thread_data_t *except)
+int forkgc_proc_signal_all_except (int sig, thread_data_t *except)
 {
     int signal_count = 0;
     thread_data_t *td;
@@ -222,11 +222,11 @@ int threadscan_proc_signal_all_except (int sig, thread_data_t *except)
         if (td != except && td->is_active) {
             int ret = pthread_kill(td->self, sig);
             if (EINVAL == ret) {
-                threadscan_fatal("threadscan: "
-                                 "pthread_kill() returned EINVAL.\n");
+                forkgc_fatal("threadscan: "
+                             "pthread_kill() returned EINVAL.\n");
             } else if (ESRCH == ret) {
-                threadscan_diagnostic("threadscan: "
-                                      "pthread_kill() returned ESRCH.\n");
+                forkgc_diagnostic("threadscan: "
+                                  "pthread_kill() returned ESRCH.\n");
             } else {
                 ++signal_count;
             }
@@ -239,7 +239,7 @@ int threadscan_proc_signal_all_except (int sig, thread_data_t *except)
 /**
  * Send a signal to all threads in the process using pthread_kill().
  */
-int threadscan_proc_signal (int sig)
+int forkgc_proc_signal (int sig)
 {
     int signal_count = 0;
     thread_data_t *td;
@@ -251,11 +251,11 @@ int threadscan_proc_signal (int sig)
         if (td->is_active) {
             int ret = pthread_kill(td->self, sig);
             if (EINVAL == ret) {
-                threadscan_fatal("threadscan: "
-                                 "pthread_kill() returned EINVAL.\n");
+                forkgc_fatal("threadscan: "
+                             "pthread_kill() returned EINVAL.\n");
             } else if (ESRCH == ret) {
-                threadscan_diagnostic("threadscan: "
-                                      "pthread_kill() returned ESRCH.\n");
+                forkgc_diagnostic("threadscan: "
+                                  "pthread_kill() returned ESRCH.\n");
             } else {
                 ++signal_count;
             }
@@ -269,7 +269,7 @@ int threadscan_proc_signal (int sig)
  * Wait for all threads that are trying to help out to discover the
  * current timestamp.
  */
-void threadscan_proc_wait_for_timestamp (size_t curr)
+void forkgc_proc_wait_for_timestamp (size_t curr)
 {
     thread_data_t *td;
     FOREACH_IN_THREAD_LIST(td, &thread_list)
