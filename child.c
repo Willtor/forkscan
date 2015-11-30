@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -184,15 +184,15 @@ static int collect_ranges (void *p,
         return 1;
     }
     if (is_lib("libc", path)) {
-        // Part of the threadscan module memory.  It's clean.
+        // Part of the ForkGC module memory.  It's clean.
         return 1;
     }
     if (is_lib("libdl", path)) {
-        // Part of the threadscan module memory.  It's clean.
+        // Part of the ForkGC module memory.  It's clean.
         return 1;
     }
-    if (is_lib("libthreadscan", path)) {
-        // Part of the threadscan module memory.  It's clean.
+    if (is_lib("libforkgc", path)) {
+        // Part of the ForkGC module memory.  It's clean.
         return 1;
     }
     if (bits[3] == 's') {
@@ -216,7 +216,7 @@ static int collect_ranges (void *p,
 
     mem_range_t big_range = { low, high };
     while (big_range.low != big_range.high) {
-        mem_range_t next = threadscan_alloc_next_subrange(&big_range);
+        mem_range_t next = forkgc_alloc_next_subrange(&big_range);
         if (next.low != next.high) {
             // This is a region of memory we want to scan.
             g_bytes_to_scan += next.high - next.low;
@@ -236,7 +236,7 @@ static int collect_ranges (void *p,
     return 1;
 }
 
-void threadscan_child (gc_data_t *gc_data, int fd)
+void forkgc_child (gc_data_t *gc_data, int fd)
 {
     // Scan memory for references.
     g_bytes_to_scan = 0;

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,7 +26,7 @@ THE SOFTWARE.
 #include <stddef.h>
 
 /**
- * Queues, in ThreadScan, are circular buffers that are thread-safe,
+ * Queues, in ForkGC, are circular buffers that are thread-safe,
  * linearizable data structures, assuming single-reader, single-writer
  * usage.  A queue is initialized given the struct and a buffer that will
  * be used to store the values.
@@ -56,45 +56,45 @@ struct queue_t {
 /**
  * Initialize a queue object.  Queues are implemented as circular buffers.
  */
-void threadscan_queue_init (queue_t *q, size_t *buf, size_t capacity);
+void forkgc_queue_init (queue_t *q, size_t *buf, size_t capacity);
 
 /**
  * Return 1 if the queue is empty, zero otherwise.
  */
-int threadscan_queue_is_empty (queue_t *q);
+int forkgc_queue_is_empty (queue_t *q);
 
 /**
  * Return 1 if the queue is full, zero otherwise.
  */
-int threadscan_queue_is_full (queue_t *q);
+int forkgc_queue_is_full (queue_t *q);
 
 /**
  * Return the number of empty slots in the queue.
  */
-int threadscan_queue_available (queue_t *q);
+int forkgc_queue_available (queue_t *q);
 
 /**
  * Push a value onto the head of the queue.  Caller must verify there is
  * space on the queue.
  */
-void threadscan_queue_push (queue_t *q, size_t value);
+void forkgc_queue_push (queue_t *q, size_t value);
 
 /**
  * Remove a value from the tail of the queue and return it.
  */
-size_t threadscan_queue_pop (queue_t *q);
+size_t forkgc_queue_pop (queue_t *q);
 
 /**
  * Push a block of values onto the queue of count "len".  Caller must verify
  * there is space on the queue.
  */
-void threadscan_queue_push_bulk (queue_t *q, size_t values[], size_t len);
+void forkgc_queue_push_bulk (queue_t *q, size_t values[], size_t len);
 
 /**
  * Pop a block of values from the queue, up to "len" in count.  The values
  * buffer is populated with the removed values.  The total number of values
  * popped is returned.
  */
-int threadscan_queue_pop_bulk (size_t values[], size_t len, queue_t *q);
+int forkgc_queue_pop_bulk (size_t values[], size_t len, queue_t *q);
 
 #endif  // !defined _QUEUE_H_

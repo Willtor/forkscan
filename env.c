@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -29,7 +29,7 @@ THE SOFTWARE.
 #define MAX_PTRS_PER_THREAD (1024 * 1024)
 #define MIN_PTRS_PER_THREAD 1024
 
-static const char env_ptrs_per_thread[] = "THREADSCAN_PTRS_PER_THREAD";
+static const char env_ptrs_per_thread[] = "FORKGC_PTRS_PER_THREAD";
 
 static const char env_report_statistics[] = "FORKGC_REPORT_STATS";
 
@@ -38,7 +38,7 @@ static const char env_sweeper_threads[] = "FORKGC_SWEEPER_THREAD_COUNT";
 // # of ptrs a thread can "save up" before initiating a collection run.
 // The number of pointers per thread should be a power of 2 because we use
 // this number to do masking (to avoid the costly modulo operation).
-int g_threadscan_ptrs_per_thread;
+int g_forkgc_ptrs_per_thread;
 
 // Whether to report application statistics before the program terminates.
 int g_forkgc_report_statistics;
@@ -60,7 +60,7 @@ static void env_init ()
     // Pointers per thread -- how many pointers a thread can track before a
     // collection run occurs.  This should be a power of 2.  To avoid
     // complicated numbers the environment variable,
-    // THREADSCAN_PTRS_PER_THREAD, is multiplied by 1024 so that a user can
+    // FORKGC_PTRS_PER_THREAD, is multiplied by 1024 so that a user can
     // think in terms of small powers of 2.
     {
         int ptrs_per_thread;
@@ -94,7 +94,7 @@ static void env_init ()
             ptrs_per_thread = MAX_PTRS_PER_THREAD;
         }
 
-        g_threadscan_ptrs_per_thread = ptrs_per_thread;
+        g_forkgc_ptrs_per_thread = ptrs_per_thread;
     }
 
     {

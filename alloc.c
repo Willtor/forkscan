@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -203,7 +203,7 @@ static void metadata_free (memory_metadata_t *meta)
 }
 
 /**
- * See threadscan_alloc_next_subrange().  This is not thread-safe.
+ * See forkgc_alloc_next_subrange().  This is not thread-safe.
  */
 static mem_range_t metadata_break_range (mem_range_t *big_range)
 {
@@ -262,30 +262,30 @@ static void *alloc_mmap (size_t size, int shared)
 /****************************************************************************/
 
 /**
- * mmap() for the threadscan system.  This call never fails.  But you should
+ * mmap() for the ForkGC system.  This call never fails.  But you should
  * only ever ask for big chunks in multiples of the page size.
  * @return The allocated memory.
  */
-void *threadscan_alloc_mmap (size_t size)
+void *forkgc_alloc_mmap (size_t size)
 {
     return alloc_mmap(size, /*shared=*/0);
 }
 
 /**
- * mmap() for the threadscan system.  This call never fails.  But you should
+ * mmap() for the ForkGC system.  This call never fails.  But you should
  * only ever ask for big chunks in multiples of the page size.  The mmapped
  * memory is marked as shared among processes.
  * @return The allocated memory.
  */
-void *threadscan_alloc_mmap_shared (size_t size)
+void *forkgc_alloc_mmap_shared (size_t size)
 {
     return alloc_mmap(size, /*shared=*/1);
 }
 
 /**
- * munmap() for the threadscan system.
+ * munmap() for the ForkGC system.
  */
-void threadscan_alloc_munmap (void *ptr)
+void forkgc_alloc_munmap (void *ptr)
 {
     assert(ptr);
 
@@ -301,14 +301,14 @@ void threadscan_alloc_munmap (void *ptr)
 
 /**
  * Given a *big_range, return the first chunk of it that doesn't contain
- * memory that belongs to threadscan.  *big_range is modified to show the
+ * memory that belongs to ForkGC.  *big_range is modified to show the
  * remaining portion of the range.  This is not thread-safe.
  *
  * @return A chunk of memory that does not overlap with memory owned by
- * threadscan.  This chunk may have zero length if no such chunk could be
+ * ForkGC.  This chunk may have zero length if no such chunk could be
  * found in *big_range.
  */
-mem_range_t threadscan_alloc_next_subrange (mem_range_t *big_range)
+mem_range_t forkgc_alloc_next_subrange (mem_range_t *big_range)
 {
     // FIXME: Using mem_range_t creates a circular dependency on util.h.
     return metadata_break_range(big_range);

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -125,7 +125,7 @@ int pthread_create (pthread_t *thread,
     if (NULL == stack) {
         stacksize = 2 * 1024 * 1024; // 2 MB.
         assert(stacksize % PAGESIZE == 0);
-        stack = threadscan_alloc_mmap(stacksize);
+        stack = forkgc_alloc_mmap(stacksize);
         ret = pthread_attr_setstack(&real_attr, stack, stacksize);
         if (0 != ret) {
             threadscan_fatal("threadscan: unable to set stack attributes.\n");
@@ -148,7 +148,7 @@ int pthread_create (pthread_t *thread,
         // problem, though.  Just clean up the memory we allocated for
         // the thread.  The end.
         if (td->stack_is_ours) {
-            threadscan_alloc_munmap(stack);
+            forkgc_alloc_munmap(stack);
         }
         threadscan_util_thread_data_free(td);
     }

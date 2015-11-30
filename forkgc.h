@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,7 +26,7 @@ THE SOFTWARE.
 #include "child.h" // FIXME: Should define gc_data_t in forkgc.h
 #include <signal.h>
 
-#define SIGTHREADSCAN SIGUSR1
+#define SIGFORKGC SIGUSR1
 
 /**
  * Acknowledge the signal sent by the GC thread and perform any work required.

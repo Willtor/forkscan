@@ -83,13 +83,13 @@ static void generate_working_pointers_list (gc_data_t *gc_data)
     // Add the pointers from each of the individual thread buffers.
     FOREACH_IN_THREAD_LIST(td, thread_list)
         assert(td);
-        n += threadscan_queue_pop_bulk(&gc_data->addrs[n],
-                                       g_tsdata.max_ptrs - n,
-                                       &td->ptr_list);
+        n += forkgc_queue_pop_bulk(&gc_data->addrs[n],
+                                   g_tsdata.max_ptrs - n,
+                                   &td->ptr_list);
     ENDFOREACH_IN_THREAD_LIST(td, thread_list);
 
     gc_data->n_addrs = n;
-    assert(!threadscan_queue_is_full(&threadscan_thread_get_td()->ptr_list));
+    assert(!forkgc_queue_is_full(&threadscan_thread_get_td()->ptr_list));
 }
 
 /****************************************************************************/
@@ -104,7 +104,7 @@ static void threadscan_reclaim ()
     // Get memory to store the list of pointers:
     //   0 - 4095: Reserved page for the gc_data_t struct.
     //   4096 -  : Address list.
-    working_memory = threadscan_alloc_mmap(g_tsdata.working_buffer_sz);
+    working_memory = forkgc_alloc_mmap(g_tsdata.working_buffer_sz);
     gc_data = (gc_data_t*)working_memory;
     gc_data->addrs = (size_t*)&working_memory[PAGESIZE];
     gc_data->n_addrs = 0;
@@ -133,8 +133,8 @@ void threadscan_collect (void *ptr)
     }
 
     thread_data_t *td = threadscan_thread_get_td();
-    threadscan_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
-    while (threadscan_queue_is_full(&td->ptr_list)) {
+    forkgc_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
+    while (forkgc_queue_is_full(&td->ptr_list)) {
         // While this thread's local queue of pointers is full, try to initiate
         // reclamation.
 
@@ -191,7 +191,7 @@ void *automalloc (size_t size)
  */
 static void signal_handler (int sig)
 {
-    assert(SIGTHREADSCAN == sig);
+    assert(SIGFORKGC == sig);
     if (g_in_malloc) {
         g_waiting_to_fork = 1;
         return;
@@ -207,11 +207,11 @@ static void register_signal_handlers ()
 {
     /* We signal threads to get them to stop while we prepare a snapshot
        on the cleanup thread. */
-    if (signal(SIGTHREADSCAN, signal_handler) == SIG_ERR) {
+    if (signal(SIGFORKGC, signal_handler) == SIG_ERR) {
         threadscan_fatal("threadscan: Unable to register signal handler.\n");
     }
 
-    g_tsdata.max_ptrs = g_threadscan_ptrs_per_thread * MAX_THREAD_COUNT;
+    g_tsdata.max_ptrs = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
 
     // Calculate reserved space for stored addresses.
     g_tsdata.working_buffer_sz = g_tsdata.max_ptrs * sizeof(size_t)

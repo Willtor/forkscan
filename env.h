@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -29,7 +29,7 @@ THE SOFTWARE.
 // # of ptrs a thread can "save up" before initiating a collection run.
 // The number of pointers per thread should be a power of 2 because we use
 // this number to do masking (to avoid the costly modulo operation).
-extern int g_threadscan_ptrs_per_thread;
+extern int g_forkgc_ptrs_per_thread;
 
 // Whether to report application statistics before the program terminates.
 extern int g_forkgc_report_statistics;

@@ -49,13 +49,13 @@ static thread_data_t *g_td_staged_to_free = NULL;
 
 thread_data_t *threadscan_util_thread_data_new ()
 {
-    char *memblock = (char*)threadscan_alloc_mmap(MEMBLOCK_SIZE);
+    char *memblock = (char*)forkgc_alloc_mmap(MEMBLOCK_SIZE);
     size_t *local_list =
-        (size_t*)threadscan_alloc_mmap(g_threadscan_ptrs_per_thread
-                                        * sizeof(size_t));
+        (size_t*)forkgc_alloc_mmap(g_forkgc_ptrs_per_thread
+                                   * sizeof(size_t));
     thread_data_t *td = (thread_data_t*)memblock;
-    threadscan_queue_init(&td->ptr_list, local_list,
-                          g_threadscan_ptrs_per_thread);
+    forkgc_queue_init(&td->ptr_list, local_list,
+                      g_forkgc_ptrs_per_thread);
     td->local_block.low = td->local_block.high = 0;
     td->ref_count = 1;
     return td;
@@ -78,9 +78,9 @@ void threadscan_util_thread_data_free (thread_data_t *td)
 
     // FIXME: Should do something about any possible remaining pointers in this
     // thread's ptr_list!  Right now, they're getting leaked.
-    threadscan_alloc_munmap(td->ptr_list.e);
+    forkgc_alloc_munmap(td->ptr_list.e);
 
-    threadscan_alloc_munmap(td);
+    forkgc_alloc_munmap(td);
 }
 
 void threadscan_util_thread_data_cleanup (pthread_t tid)
@@ -109,7 +109,7 @@ void threadscan_util_thread_data_cleanup (pthread_t tid)
     }
 
     if (td->stack_is_ours) {
-        threadscan_alloc_munmap(td->user_stack_low);
+        forkgc_alloc_munmap(td->user_stack_low);
     }
 
     threadscan_util_thread_data_free(td);

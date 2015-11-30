@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -46,6 +46,6 @@ int is_ref (gc_data_t *gc_data, int loc, size_t cmp);
 
 int binary_search (size_t val, size_t *a, int min, int max);
 
-void threadscan_child (gc_data_t *gc_data, int fd);
+void forkgc_child (gc_data_t *gc_data, int fd);
 
 #endif // !defined _CHILD_H_

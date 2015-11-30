@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ThreadScan authors
+Copyright (c) 2015 ForkGC authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -213,7 +213,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
     g_signal_mode = MODE_SWEEP;
     g_received_signal = 0;
     start = rdtsc();
-    sig_count = threadscan_proc_signal(SIGTHREADSCAN);
+    sig_count = threadscan_proc_signal(SIGFORKGC);
     if (sig_count == 0) return 0; // Program is about to exit.
     addrs_per_thread = gc_data->n_addrs / sig_count;
 
@@ -315,11 +315,11 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     // Total pages needed is the number of pages for the addresses, plus the
     // number of pages needed for the minimap, plus one (for the gc_data_t).
     char *p =
-        (char*)threadscan_alloc_mmap_shared((pages_of_addrs     // addr array.
-                                             + pages_of_minimap // minimap.
-                                             + pages_of_count   // ref count.
-                                             + 1)               // struct page.
-                                            * PAGESIZE);
+        (char*)forkgc_alloc_mmap_shared((pages_of_addrs     // addr array.
+                                         + pages_of_minimap // minimap.
+                                         + pages_of_count   // ref count.
+                                         + 1)               // struct page.
+                                        * PAGESIZE);
 
     // Perform assignments as offsets into the block that was bulk-allocated.
     size_t offset = 0;
@@ -387,7 +387,7 @@ static void garbage_collect (gc_data_t *gc_data)
     g_signal_mode = MODE_SNAPSHOT;
     g_received_signal = 0;
     start = rdtsc();
-    sig_count = threadscan_proc_signal(SIGTHREADSCAN);
+    sig_count = threadscan_proc_signal(SIGFORKGC);
     while (g_received_signal < sig_count) pthread_yield();
     child_pid = fork();
 
@@ -397,7 +397,7 @@ static void garbage_collect (gc_data_t *gc_data)
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
         close(pipefd[PIPE_READ]);
-        threadscan_child(working_data, pipefd[PIPE_WRITE]);
+        forkgc_child(working_data, pipefd[PIPE_WRITE]);
         close(pipefd[PIPE_WRITE]);
         exit(0);
     }
@@ -436,7 +436,7 @@ static void garbage_collect (gc_data_t *gc_data)
     }
 
     close(pipefd[PIPE_READ]);
-    threadscan_alloc_munmap(working_data); // FIXME: ...
+    forkgc_alloc_munmap(working_data); // FIXME: ...
 
     // Free up unnecessary space.
     assert(gc_data);
@@ -448,7 +448,7 @@ static void garbage_collect (gc_data_t *gc_data)
     } else assert(NULL == g_uncollected_data);
     while (gc_data) {
         tmp = gc_data->next;
-        threadscan_alloc_munmap(gc_data); // FIXME: Munmap is bad.
+        forkgc_alloc_munmap(gc_data); // FIXME: Munmap is bad.
         gc_data = tmp;
     }
 }
