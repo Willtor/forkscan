@@ -184,6 +184,7 @@ int forkgc_diagnostic (const char *format, ...)
 
     assert(format);
 
+    fprintf(stderr, "ForkGC diagnostic: ");
     va_start(arg, format);
     ret = vfprintf(stderr, format, arg);
     va_end(arg);
@@ -197,6 +198,7 @@ void forkgc_fatal (const char *format, ...)
 
     assert(format);
 
+    printf("ForkGC fatal: ");
     va_start(arg, format);
     vfprintf(stderr, format, arg);
     va_end(arg);

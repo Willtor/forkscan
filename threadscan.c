@@ -208,7 +208,7 @@ static void register_signal_handlers ()
     /* We signal threads to get them to stop while we prepare a snapshot
        on the cleanup thread. */
     if (signal(SIGFORKGC, signal_handler) == SIG_ERR) {
-        forkgc_fatal("threadscan: Unable to register signal handler.\n");
+        forkgc_fatal("Unable to register signal handler.\n");
     }
 
     g_tsdata.max_ptrs = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;

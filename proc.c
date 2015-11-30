@@ -138,7 +138,7 @@ void forkgc_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
     mem_range->low = mem_range->high = 0;
 
     if (NULL == (fp = fopen(procmap, "r"))) {
-        forkgc_fatal("threadscan: unable to open memory map file.\n");
+        forkgc_fatal("unable to open memory map file.\n");
     }
 
     while (read_mapline(fp, &mapline)) {
@@ -164,7 +164,7 @@ void forkgc_proc_map_iterate (int (*f) (void *arg,
     mapline_t mapline;
 
     if (NULL == (fp = fopen(procmap, "r"))) {
-        forkgc_fatal("threadscan: unable to open memory map file.\n");
+        forkgc_fatal("unable to open memory map file.\n");
     }
 
     while (read_mapline(fp, &mapline)) {
@@ -222,11 +222,9 @@ int forkgc_proc_signal_all_except (int sig, thread_data_t *except)
         if (td != except && td->is_active) {
             int ret = pthread_kill(td->self, sig);
             if (EINVAL == ret) {
-                forkgc_fatal("threadscan: "
-                             "pthread_kill() returned EINVAL.\n");
+                forkgc_fatal("pthread_kill() returned EINVAL.\n");
             } else if (ESRCH == ret) {
-                forkgc_diagnostic("threadscan: "
-                                  "pthread_kill() returned ESRCH.\n");
+                forkgc_diagnostic("pthread_kill() returned ESRCH.\n");
             } else {
                 ++signal_count;
             }
@@ -251,11 +249,9 @@ int forkgc_proc_signal (int sig)
         if (td->is_active) {
             int ret = pthread_kill(td->self, sig);
             if (EINVAL == ret) {
-                forkgc_fatal("threadscan: "
-                             "pthread_kill() returned EINVAL.\n");
+                forkgc_fatal("pthread_kill() returned EINVAL.\n");
             } else if (ESRCH == ret) {
-                forkgc_diagnostic("threadscan: "
-                                  "pthread_kill() returned ESRCH.\n");
+                forkgc_diagnostic("pthread_kill() returned ESRCH.\n");
             } else {
                 ++signal_count;
             }

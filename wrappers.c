@@ -99,7 +99,7 @@ int pthread_create (pthread_t *thread,
     // Wrap the user data.
     td = forkgc_util_thread_data_new();
     if (NULL == td) {
-        forkgc_fatal("threadscan: Out of memory.\n");
+        forkgc_fatal("Out of memory.\n");
     }
     td->user_routine = start_routine;
     td->user_arg = arg;
@@ -111,7 +111,7 @@ int pthread_create (pthread_t *thread,
     if (NULL == attr) {
         ret = pthread_attr_init(&real_attr);
         if (0 != ret) {
-            forkgc_fatal("threadscan: could not create thread.\n");
+            forkgc_fatal("could not create thread.\n");
         }
     } else {
         real_attr = *attr;
@@ -119,7 +119,7 @@ int pthread_create (pthread_t *thread,
 
     ret = pthread_attr_getstack(&real_attr, &stack, &stacksize);
     if (0 != ret) {
-        forkgc_fatal("threadscan: unable to get stack attributes.\n");
+        forkgc_fatal("unable to get stack attributes.\n");
     }
 
     if (NULL == stack) {
@@ -128,7 +128,7 @@ int pthread_create (pthread_t *thread,
         stack = forkgc_alloc_mmap(stacksize);
         ret = pthread_attr_setstack(&real_attr, stack, stacksize);
         if (0 != ret) {
-            forkgc_fatal("threadscan: unable to set stack attributes.\n");
+            forkgc_fatal("unable to set stack attributes.\n");
         }
         td->stack_is_ours = 1;
     }
@@ -213,7 +213,7 @@ static int main_replacement (int argc, char **argv, char **env)
     mem_range_t stack_data;
     main_args_t main_args = { argc, argv, env };
     if (NULL == td) {
-        forkgc_fatal("threadscan: Out of memory.\n");
+        forkgc_fatal("Out of memory.\n");
     }
     td->user_routine = main_thunk;
     td->user_arg = &main_args;
