@@ -27,12 +27,8 @@ THE SOFTWARE.
 #include "env.h"
 #include "forkgc.h"
 #include <jemalloc/jemalloc.h>
-#include <malloc.h>
 #include "proc.h"
 #include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include "thread.h"
 #include "util.h"
 
@@ -163,29 +159,6 @@ static void free_ptrs (thread_data_t *td)
     }
 }
 
-__attribute__((visibility("default")))
-void *automalloc (size_t size)
-{
-    void *p;
-    g_in_malloc = 1;
-    p = MALLOC(size);
-
-    // Free a couple pointers, if we have them.
-    free_ptrs(forkgc_thread_get_td());
-    g_in_malloc = 0;
-
-    if (g_waiting_to_fork) {
-        // Sadly, TC-Malloc has a deadlock bug when interacting with fork().
-        // We need to make sure it isn't holding the global lock when we
-        // initiate cleanup.
-        forkgc_acknowledge_signal();
-        g_waiting_to_fork = 0;
-    }
-
-    threadscan_collect(p);
-    return p;
-}
-
 /**
  * Got a signal from a thread wanting to do cleanup.
  */
@@ -216,4 +189,67 @@ static void register_signal_handlers ()
     // Calculate reserved space for stored addresses.
     g_tsdata.working_buffer_sz = g_tsdata.max_ptrs * sizeof(size_t)
         + PAGESIZE;
+}
+
+/****************************************************************************/
+/*                            Exported Functions                            */
+/****************************************************************************/
+
+/**
+ * Allocate memory of the specified size from ForkGC's pool and return it.
+ * This memory is untracked by the system.
+ */
+__attribute__((visibility("default")))
+void *forkgc_malloc (size_t size)
+{
+    void *p;
+    g_in_malloc = 1;
+    p = MALLOC(size);
+
+    // Free a couple pointers, if we have them.
+    free_ptrs(forkgc_thread_get_td());
+    g_in_malloc = 0;
+
+    if (g_waiting_to_fork) {
+        // Sadly, TC-Malloc has a deadlock bug when interacting with fork().
+        // We need to make sure it isn't holding the global lock when we
+        // initiate cleanup.
+        forkgc_acknowledge_signal();
+        g_waiting_to_fork = 0;
+    }
+    return p;
+}
+
+/**
+ * Retire a pointer allocated by ForkGC so that it will be free'd for reuse
+ * when no remaining references to it exist.
+ */
+__attribute__((visibility("default")))
+void forkgc_retire (void *p)
+{
+    threadscan_collect(p);
+}
+
+/**
+ * Free a pointer allocated by ForkGC.  The memory may be immediately reused,
+ * so if there is any possibility another thread may know about this memory
+ * and might read from it, forkgc_retire() should be used instead.
+ */
+__attribute__((visibility("default")))
+void forkgc_free (void *p)
+{
+    FREE(p);
+}
+
+/**
+ * Allocate a buffer of "size" bytes and return a pointer to it.  This memory
+ * will be tracked by the garbage collector, so free() should never be called
+ * on it.
+ */
+__attribute__((visibility("default")))
+void *forkgc_automalloc (size_t size)
+{
+    void *p = forkgc_malloc(size);
+    forkgc_retire(p);
+    return p;
 }

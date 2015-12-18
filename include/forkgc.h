@@ -28,11 +28,30 @@ extern "C" {
 #endif
 
 /**
+ * Allocate memory of the specified size from ForkGC's pool and return it.
+ * This memory is untracked by the system.
+ */
+void *forkgc_malloc (size_t size);
+
+/**
+ * Retire a pointer allocated by ForkGC so that it will be free'd for reuse
+ * when no remaining references to it exist.
+ */
+void forkgc_retire (void *p);
+
+/**
+ * Free a pointer allocated by ForkGC.  The memory may be immediately reused,
+ * so if there is any possibility another thread may know about this memory
+ * and might read from it, forkgc_retire() should be used instead.
+ */
+void forkgc_free (void *p);
+
+/**
  * Allocate a buffer of "size" bytes and return a pointer to it.  This memory
  * will be tracked by the garbage collector, so free() should never be called
  * on it.
  */
-extern void *automalloc (size_t size);
+extern void *forkgc_automalloc (size_t size);
 
 #ifdef __cplusplus
 }
