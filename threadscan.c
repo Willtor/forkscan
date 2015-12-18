@@ -114,32 +114,6 @@ static void threadscan_reclaim ()
     forkgc_thread_cleanup_release();
 }
 
-/**
- * Interface for applications.  "Collecting" a pointer registers it with
- * threadscan.  When a sweep of memory occurs, all registered pointers are
- * sought in memory.  Any that can't be found are free()'d because no
- * remaining threads have pointers to them.
- */
-__attribute__((visibility("default")))
-void threadscan_collect (void *ptr)
-{
-    if (NULL == ptr) {
-        forkgc_diagnostic("Tried to collect NULL.\n");
-        return;
-    }
-
-    thread_data_t *td = forkgc_thread_get_td();
-    forkgc_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
-    while (forkgc_queue_is_full(&td->ptr_list)) {
-        // While this thread's local queue of pointers is full, try to initiate
-        // reclamation.
-
-        forkgc_thread_cleanup_try_acquire()
-            ? threadscan_reclaim() // reclaim() will release the cleanup lock.
-            : pthread_yield();
-    }
-}
-
 /****************************************************************************/
 /*                            Bystander threads.                            */
 /****************************************************************************/
@@ -225,9 +199,23 @@ void *forkgc_malloc (size_t size)
  * when no remaining references to it exist.
  */
 __attribute__((visibility("default")))
-void forkgc_retire (void *p)
+void forkgc_retire (void *ptr)
 {
-    threadscan_collect(p);
+    if (NULL == ptr) {
+        forkgc_diagnostic("Tried to collect NULL.\n");
+        return;
+    }
+
+    thread_data_t *td = forkgc_thread_get_td();
+    forkgc_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
+    while (forkgc_queue_is_full(&td->ptr_list)) {
+        // While this thread's local queue of pointers is full, try to initiate
+        // reclamation.
+
+        forkgc_thread_cleanup_try_acquire()
+            ? threadscan_reclaim() // reclaim() will release the cleanup lock.
+            : pthread_yield();
+    }
 }
 
 /**
@@ -236,9 +224,9 @@ void forkgc_retire (void *p)
  * and might read from it, forkgc_retire() should be used instead.
  */
 __attribute__((visibility("default")))
-void forkgc_free (void *p)
+void forkgc_free (void *ptr)
 {
-    FREE(p);
+    FREE(ptr);
 }
 
 /**

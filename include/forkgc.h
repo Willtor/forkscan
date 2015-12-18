@@ -37,14 +37,14 @@ void *forkgc_malloc (size_t size);
  * Retire a pointer allocated by ForkGC so that it will be free'd for reuse
  * when no remaining references to it exist.
  */
-void forkgc_retire (void *p);
+void forkgc_retire (void *ptr);
 
 /**
  * Free a pointer allocated by ForkGC.  The memory may be immediately reused,
  * so if there is any possibility another thread may know about this memory
  * and might read from it, forkgc_retire() should be used instead.
  */
-void forkgc_free (void *p);
+void forkgc_free (void *ptr);
 
 /**
  * Allocate a buffer of "size" bytes and return a pointer to it.  This memory
