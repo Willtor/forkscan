@@ -55,7 +55,7 @@ static volatile __thread int g_in_malloc = 0;
 static __thread int g_waiting_to_fork = 0;
 
 /****************************************************************************/
-/*                            Pointer tracking.                             */
+/*                                Reclaimer.                                */
 /****************************************************************************/
 
 static void generate_working_pointers_list (gc_data_t *gc_data)
@@ -76,11 +76,7 @@ static void generate_working_pointers_list (gc_data_t *gc_data)
     assert(!forkgc_queue_is_full(&forkgc_thread_get_td()->ptr_list));
 }
 
-/****************************************************************************/
-/*                             Cleanup thread.                              */
-/****************************************************************************/
-
-static void threadscan_reclaim ()
+static void become_reclaimer ()
 {
     char *working_memory;   // Block of memory to free.
     gc_data_t *gc_data;
@@ -201,7 +197,7 @@ void forkgc_retire (void *ptr)
         // reclamation.
 
         forkgc_thread_cleanup_try_acquire()
-            ? threadscan_reclaim() // reclaim() will release the cleanup lock.
+            ? become_reclaimer() // this will release the cleanup lock.
             : pthread_yield();
     }
 }
