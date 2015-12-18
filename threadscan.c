@@ -36,9 +36,9 @@ THE SOFTWARE.
 /*                           Typedefs and structs                           */
 /****************************************************************************/
 
-typedef struct threadscan_data_t threadscan_data_t;
+typedef struct config_t config_t;
 
-struct threadscan_data_t {
+struct config_t {
     int max_ptrs; // Max pointer count that can be tracked during reclamation.
 
     // Size of the BIG buffer used to store pointers for a collection run.
@@ -49,7 +49,7 @@ struct threadscan_data_t {
 /*                                 Globals                                  */
 /****************************************************************************/
 
-static threadscan_data_t g_tsdata;
+static config_t g_config;
 
 static volatile __thread int g_in_malloc = 0;
 static __thread int g_waiting_to_fork = 0;
@@ -68,7 +68,7 @@ static void generate_working_pointers_list (gc_data_t *gc_data)
     FOREACH_IN_THREAD_LIST(td, thread_list)
         assert(td);
         n += forkgc_queue_pop_bulk(&gc_data->addrs[n],
-                                   g_tsdata.max_ptrs - n,
+                                   g_config.max_ptrs - n,
                                    &td->ptr_list);
     ENDFOREACH_IN_THREAD_LIST(td, thread_list);
 
@@ -84,11 +84,11 @@ static void become_reclaimer ()
     // Get memory to store the list of pointers:
     //   0 - 4095: Reserved page for the gc_data_t struct.
     //   4096 -  : Address list.
-    working_memory = forkgc_alloc_mmap(g_tsdata.working_buffer_sz);
+    working_memory = forkgc_alloc_mmap(g_config.working_buffer_sz);
     gc_data = (gc_data_t*)working_memory;
     gc_data->addrs = (size_t*)&working_memory[PAGESIZE];
     gc_data->n_addrs = 0;
-    gc_data->capacity = g_tsdata.max_ptrs;
+    gc_data->capacity = g_config.max_ptrs;
 
     // Copy the pointers into the list.
     generate_working_pointers_list(gc_data);
@@ -142,10 +142,10 @@ static void register_signal_handlers ()
         forkgc_fatal("Unable to register signal handler.\n");
     }
 
-    g_tsdata.max_ptrs = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
+    g_config.max_ptrs = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
 
     // Calculate reserved space for stored addresses.
-    g_tsdata.working_buffer_sz = g_tsdata.max_ptrs * sizeof(size_t)
+    g_config.working_buffer_sz = g_config.max_ptrs * sizeof(size_t)
         + PAGESIZE;
 }
 
