@@ -24,7 +24,10 @@ THE SOFTWARE.
 #define _FORKGC_H_
 
 #ifdef __cplusplus
+#include <cstddef.h>
 extern "C" {
+#else
+#include <stddef.h>
 #endif
 
 /**
