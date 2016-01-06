@@ -351,6 +351,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     generate_minimap(ret);
 
 #ifndef NDEBUG
+    int i;
     for (i = 0; i < ret->n_addrs; ++i) {
         assert(ret->refs[i] == 0);
     }
