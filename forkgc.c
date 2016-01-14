@@ -40,6 +40,8 @@ THE SOFTWARE.
 #include "thread.h"
 #include <unistd.h>
 
+#define MAX_FREE_LIST_LENGTH 128
+
 #define SAVINGS_THRESHOLD 2048
 
 #define PIPE_READ 0
@@ -121,82 +123,33 @@ size_t rdtsc ()
     return ret;
 }
 
-static int unref_addr (thread_data_t *td, unref_config_t *unref_config,
-                       int n, int max_depth)
+static void address_range (sweeper_work_t *work)
 {
-    int i;
-    size_t *addrs = unref_config->gc_data->addrs;
-    size_t addr = addrs[n];
-    assert(addr & 1);
-    size_t *p = (size_t*)PTR_MASK(addr);
-    int elements = (int)(MALLOC_USABLE_SIZE(p) / sizeof(size_t));
-    int savings = 1;
-
-    for (i = 0; i < elements; ++i) {
-        size_t deep_addr = PTR_MASK(p[i]);
-        if (deep_addr >= unref_config->min_val
-            && deep_addr <= unref_config->max_val) {
-
-            // Found a value within our range of addresses.  See if it's in
-            // our set.  Also, null it.
-            p[i] = 0;
-            gc_data_t *gc_data = unref_config->gc_data;
-            // Level 1 search: Find the page the address would be on.
-            int v = binary_search(deep_addr, gc_data->minimap, 0,
-                                  gc_data->n_minimap);
-            // Level 2 search: Find the address within the page.
-            int loc = binary_search(deep_addr, gc_data->addrs,
-                                    v * (PAGESIZE / sizeof(size_t)),
-                                    v == gc_data->n_minimap - 1
-                                    ? gc_data->n_addrs
-                                    : (v + 1) * (PAGESIZE / sizeof(size_t)));
-
-            if (is_ref(gc_data, loc, deep_addr)) {
-
-                // Found an apparent address.  Unreference it.
-                __sync_fetch_and_sub(&gc_data->refs[loc], 1);
-                int remaining_refs = gc_data->refs[loc];
-                assert(remaining_refs >= 0);
-                if (max_depth > 0
-                    && remaining_refs == 0
-                    && BCAS(&gc_data->addrs[loc], deep_addr, deep_addr | 1)) {
-
-                    // Recurse, if depth permits.  We have a max depth
-                    // parameter because in certain cases, the stack could
-                    // overflow.
-                    savings += unref_addr(td, unref_config, loc, max_depth - 1);
-                }
-            }
-        }
-    }
-
-    free_t *f = (free_t*)p;
-    f->next = td->free_list;
-    td->free_list = f;
-    //FREE(p); // Done with it!  Bam! ALEX
-    return savings;
-}
-
-static void *address_range (sweeper_work_t *work)
-{
-    thread_data_t *td = forkgc_thread_get_td();
     gc_data_t *gc_data = work->unref_config->gc_data;
-    int savings = 0;
+    free_t *free_list = NULL;
+    int free_list_length = 0;
     int i;
     for (i = work->range_begin; i < work->range_end; ++i) {
         size_t addr = gc_data->addrs[i];
         assert(addr != 0);
-        assert(gc_data->refs[i] >= 0);
-        if (0 == (addr & 1) && gc_data->refs[i] == 0) {
-            if (BCAS(&gc_data->addrs[i], addr, addr | 1)) {
-                savings += unref_addr(td, work->unref_config, i, 64);
+        if (0 == (addr & 1)) {
+            // Memory to be freed.
+            free_t *ptr = (free_t*)addr;
+            memset(ptr, 0, MALLOC_USABLE_SIZE(ptr));
+            ptr->next = free_list;
+            free_list = ptr->next;
+            ++free_list_length;
+            if (free_list_length >= MAX_FREE_LIST_LENGTH) {
+                // Free list has gotten long enough.  We give a free list a
+                // certain size that represents a sizable chunk for a thread
+                // to grab and gradually free.
+                forkgc_util_push_free_list(free_list);
+                free_list = NULL;
+                free_list_length = 0;
             }
         }
     }
-    return NULL;
 }
-
-#define ADDRS_PER_THREAD (128 * 1024)
 
 static int find_unreferenced_nodes (gc_data_t *gc_data)
 {
@@ -249,28 +202,18 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
 
     // Compact the list.
     int write_position = 0;
-    int unfinished = 0;
-    int saved = 0;
+    int saved = 0; // FIXME: Get rid of this metric?  Does it matter?
     for (i = 0; i < gc_data->n_addrs; ++i) {
-        if (gc_data->addrs[i] & 1) ++saved;
-        if ( !(gc_data->addrs[i] & 1)) {
-            // Address doesn't have its low bit set: still alive.
-            if (write_position != i) {
-                gc_data->addrs[write_position] = gc_data->addrs[i];
-                gc_data->refs[write_position] = gc_data->refs[i];
-            }
-            if (gc_data->refs[write_position] == 0) {
-                // Node didn't get free'd because the search depth was
-                // exceeded.  We'll have to make another pass over the
-                // nodes.
-                ++unfinished;
-            }
+        if (0 == (gc_data->addrs[i] & 1)) ++saved;
+        else {
+            // Address has its low bit set: still alive.
+            gc_data->addrs[write_position] = PTR_MASK(gc_data->addrs[i]);
             ++write_position;
         }
     }
     gc_data->n_addrs = write_position;
 
-    return 0; // unfinished; // ALEX
+    return 0;
 }
 
 static void generate_minimap (gc_data_t *gc_data)
@@ -417,12 +360,7 @@ static void garbage_collect (gc_data_t *gc_data)
     if (bytes_scanned > g_scan_max) g_scan_max = bytes_scanned;
 
     // Identify unreferenced memory and free it.
-    int unfinished;
-    int iters = 0;
-    do {
-        ++iters;
-        unfinished = find_unreferenced_nodes(working_data);
-    } while (unfinished > 0);
+    find_unreferenced_nodes(working_data);
 
     gc_data->n_addrs = 0;
     int i;

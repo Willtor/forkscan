@@ -40,6 +40,7 @@ struct gc_data_t {
     int n_minimap; // unnecessary?
     int capacity;
     int completed_children;
+    int cutoff_reached;
 };
 
 int is_ref (gc_data_t *gc_data, int loc, size_t cmp);

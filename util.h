@@ -58,7 +58,7 @@ THE SOFTWARE.
 #define MAX_OF(a, b) ((a) < (b) ? (b) : (a))
 
 #define BCAS(ptr, compare, swap)                        \
-    __sync_bool_compare_and_swap(ptr, compare, swap)
+    __sync_bool_compare_and_swap((ptr), (compare), (swap))
 
 #define _TIMESTAMP_MASK 0x7FFFFFFFFFFFFFFF
 #define _TIMESTAMP_FLAG 0x8000000000000000
@@ -136,7 +136,9 @@ void forkgc_util_thread_list_init (thread_list_t *tl);
 void forkgc_util_thread_list_add (thread_list_t *tl, thread_data_t *td);
 void forkgc_util_thread_list_remove (thread_list_t *tl, thread_data_t *td);
 thread_data_t *forkgc_util_thread_list_find (thread_list_t *tl,
-                                                 size_t addr);
+                                             size_t addr);
+void forkgc_util_push_free_list (free_t *free_list);
+free_t *forkgc_util_pop_free_list ();
 
 /****************************************************************************/
 /*                              I/O functions.                              */

@@ -24,6 +24,7 @@ THE SOFTWARE.
 #include "alloc.h"
 #include "env.h"
 #include <errno.h>
+#include <jemalloc/jemalloc.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -38,6 +39,17 @@ THE SOFTWARE.
 
 // Size of a per-thread metadata memory block.
 #define MEMBLOCK_SIZE PAGESIZE
+
+typedef struct free_list_node_t free_list_node_t;
+
+struct free_list_node_t
+{
+    free_list_node_t *next;
+    free_t *free_list;
+};
+
+static free_list_node_t *free_list_list;
+static pthread_mutex_t free_list_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // FIXME: Are these actually used?
 static pthread_mutex_t g_staged_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -171,6 +183,31 @@ thread_data_t *forkgc_util_thread_list_find (thread_list_t *tl, size_t addr)
     pthread_mutex_unlock(&tl->lock);
 
     return ret;
+}
+
+void forkgc_util_push_free_list (free_t *free_list)
+{
+    // FIXME: We should really do this add/remove stuff with transactions.
+    free_list_node_t *node = MALLOC(sizeof(free_list_node_t));
+    pthread_mutex_lock(&free_list_list_lock);
+    node->free_list = free_list;
+    node->next = free_list_list;
+    pthread_mutex_unlock(&free_list_list_lock);
+}
+
+free_t *forkgc_util_pop_free_list ()
+{
+    // FIXME: We should really do this add/remove stuff with transactions.
+    free_list_node_t *node;
+    free_t *free_list;
+    if (free_list_list == NULL) return NULL;
+    pthread_mutex_lock(&free_list_list_lock);
+    node = free_list_list;
+    if (node != NULL) free_list_list = node->next;
+    pthread_mutex_unlock(&free_list_list_lock);
+    free_list = node->free_list;
+    FREE(node);
+    return free_list;
 }
 
 /****************************************************************************/

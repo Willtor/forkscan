@@ -110,7 +110,11 @@ static void free_ptrs (thread_data_t *td)
     extern int g_frees_required;
     for (i = 0; i < g_frees_required; ++i) {
         free_t *head = td->free_list;
-        if (NULL == head) return;
+        if (NULL == head) {
+            td->free_list = forkgc_util_pop_free_list();
+            if (NULL == head) return;
+            continue;
+        }
         td->free_list = head->next;
         head->next = NULL;
         FREE(head);
