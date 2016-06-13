@@ -192,6 +192,7 @@ void forkgc_util_push_free_list (free_t *free_list)
     pthread_mutex_lock(&free_list_list_lock);
     node->free_list = free_list;
     node->next = free_list_list;
+    free_list_list = node;
     pthread_mutex_unlock(&free_list_list_lock);
 }
 
@@ -199,14 +200,16 @@ free_t *forkgc_util_pop_free_list ()
 {
     // FIXME: We should really do this add/remove stuff with transactions.
     free_list_node_t *node;
-    free_t *free_list;
+    free_t *free_list = NULL;
     if (free_list_list == NULL) return NULL;
     pthread_mutex_lock(&free_list_list_lock);
     node = free_list_list;
     if (node != NULL) free_list_list = node->next;
     pthread_mutex_unlock(&free_list_list_lock);
-    free_list = node->free_list;
-    FREE(node);
+    if (node) {
+        free_list = node->free_list;
+        FREE(node);
+    }
     return free_list;
 }
 

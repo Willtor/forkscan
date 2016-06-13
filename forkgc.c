@@ -135,9 +135,11 @@ static void address_range (sweeper_work_t *work)
         if (0 == (addr & 1)) {
             // Memory to be freed.
             free_t *ptr = (free_t*)addr;
-            memset(ptr, 0, MALLOC_USABLE_SIZE(ptr));
+#ifndef NDEBUG
+            memset(ptr, 0xBB, MALLOC_USABLE_SIZE(ptr));
+#endif
             ptr->next = free_list;
-            free_list = ptr->next;
+            free_list = ptr;
             ++free_list_length;
             if (free_list_length >= MAX_FREE_LIST_LENGTH) {
                 // Free list has gotten long enough.  We give a free list a
@@ -148,6 +150,9 @@ static void address_range (sweeper_work_t *work)
                 free_list_length = 0;
             }
         }
+    }
+    if (free_list) {
+        forkgc_util_push_free_list(free_list);
     }
 }
 

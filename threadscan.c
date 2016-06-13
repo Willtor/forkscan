@@ -29,6 +29,7 @@ THE SOFTWARE.
 #include <jemalloc/jemalloc.h>
 #include "proc.h"
 #include <pthread.h>
+#include <string.h>
 #include "thread.h"
 #include "util.h"
 
@@ -117,7 +118,11 @@ static void free_ptrs (thread_data_t *td)
         }
         td->free_list = head->next;
         head->next = NULL;
+#ifndef NDEBUG
+        memset(head, 0xF0, MALLOC_USABLE_SIZE(head));
+#else
         FREE(head);
+#endif
     }
 }
 
