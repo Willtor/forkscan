@@ -497,8 +497,17 @@ void *forkgc_thread (void *ignored)
 #ifndef NDEBUG
         int n = 1;
         gc_data_t *tmp = gc_data;
+        int b_unfreed_data = 0;
         while (NULL != (tmp = tmp->next)) ++n;
-        forkgc_diagnostic("%d collects waiting.\n", n);
+        free_t *f = forkgc_util_pop_free_list();
+        if (NULL != f) {
+            b_unfreed_data = 1;
+            forkgc_util_push_free_list(f);
+        }
+        forkgc_diagnostic("%d collects waiting%s.\n", n,
+                          b_unfreed_data != 0
+                          ? " (unfreed data)"
+                          : "");
 #endif
 
         garbage_collect(gc_data);

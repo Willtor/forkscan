@@ -126,6 +126,12 @@ static void free_ptrs (thread_data_t *td)
     }
 }
 
+static void yield ()
+{
+    free_ptrs(forkgc_thread_get_td());
+    pthread_yield();
+}
+
 /**
  * Got a signal from a thread wanting to do cleanup.
  */
@@ -207,7 +213,7 @@ void forkgc_retire (void *ptr)
 
         forkgc_thread_cleanup_try_acquire()
             ? become_reclaimer() // this will release the cleanup lock.
-            : pthread_yield();
+            : yield();
     }
 }
 
