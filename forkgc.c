@@ -89,8 +89,6 @@ int g_frees_required = 8;
 static pthread_mutex_t g_gc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_gc_cond = PTHREAD_COND_INITIALIZER;
 
-#define WAITING_THRESHOLD 16
-
 static gc_data_t *g_gc_data, *g_uncollected_data;
 static volatile int g_waiting_collects;
 static pthread_mutex_t g_client_waiting_lock;
@@ -455,10 +453,10 @@ void forkgc_initiate_collection (gc_data_t *gc_data)
     }
     pthread_mutex_unlock(&g_gc_mutex);
 
-    while (g_waiting_collects > WAITING_THRESHOLD) {
+    while (g_waiting_collects > g_forkscan_throttling_queue) {
         //pthread_yield(); // FIXME: Yield.
         pthread_mutex_lock(&g_client_waiting_lock);
-        if (g_waiting_collects > WAITING_THRESHOLD) {
+        if (g_waiting_collects > g_forkscan_throttling_queue) {
             pthread_cond_wait(&g_client_waiting_cond, &g_client_waiting_lock);
         }
         pthread_mutex_unlock(&g_client_waiting_lock);
@@ -485,7 +483,7 @@ void *forkgc_thread (void *ignored)
         assert(g_gc_data);
         gc_data = g_gc_data;
         g_gc_data = NULL;
-        if (g_waiting_collects > WAITING_THRESHOLD) {
+        if (g_waiting_collects > g_forkscan_throttling_queue) {
             g_waiting_collects = 0;
             pthread_mutex_lock(&g_client_waiting_lock);
             pthread_cond_broadcast(&g_client_waiting_cond);

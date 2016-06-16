@@ -37,4 +37,7 @@ extern int g_forkgc_report_statistics;
 // How many sweeper threads get spun up by the garbage collector.
 extern int g_forkgc_sweeper_thread_count;
 
+// How many collects can queue up before user threads get throttled.
+extern int g_forkscan_throttling_queue;
+
 #endif // !defined _ENV_H_

@@ -26,6 +26,9 @@ THE SOFTWARE.
 
 #define DEFAULT_SWEEPER_THREADS 8
 
+#define DEFAULT_THROTTLING_QUEUE 16
+#define MAX_THROTTLING_QUEUE 32
+
 #define MAX_PTRS_PER_THREAD (1024 * 1024)
 #define MIN_PTRS_PER_THREAD 1024
 
@@ -34,6 +37,8 @@ static const char env_ptrs_per_thread[] = "FORKGC_PTRS_PER_THREAD";
 static const char env_report_statistics[] = "FORKGC_REPORT_STATS";
 
 static const char env_sweeper_threads[] = "FORKGC_SWEEPER_THREAD_COUNT";
+
+static const char env_throttling_queue[] = "FORKSCAN_THROTTLING_QUEUE";
 
 // # of ptrs a thread can "save up" before initiating a collection run.
 // The number of pointers per thread should be a power of 2 because we use
@@ -45,6 +50,9 @@ int g_forkgc_report_statistics;
 
 // How many sweeper threads get spun up by the garbage collector.
 int g_forkgc_sweeper_thread_count;
+
+// How many collects can queue up before user threads get throttled.
+int g_forkscan_throttling_queue;
 
 /** Parse an integer from a string.  0 if val is NULL.
  */
@@ -115,5 +123,18 @@ static void env_init ()
             sweeper_threads = MAX_SWEEPER_THREADS;
         }
         g_forkgc_sweeper_thread_count = sweeper_threads;
+    }
+
+    {
+        int throttling_queue;
+        throttling_queue = get_int(getenv(env_throttling_queue),
+                                   DEFAULT_THROTTLING_QUEUE);
+        if (throttling_queue <= 0) {
+            throttling_queue = 1;
+        }
+        if (throttling_queue > MAX_THROTTLING_QUEUE) {
+            throttling_queue = MAX_THROTTLING_QUEUE;
+        }
+        g_forkscan_throttling_queue = throttling_queue;
     }
 }
