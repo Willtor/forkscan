@@ -32,11 +32,11 @@ THE SOFTWARE.
 #define MAX_PTRS_PER_THREAD (1024 * 1024)
 #define MIN_PTRS_PER_THREAD 1024
 
-static const char env_ptrs_per_thread[] = "FORKGC_PTRS_PER_THREAD";
+static const char env_ptrs_per_thread[] = "FORKSCAN_PTRS_PER_THREAD";
 
-static const char env_report_statistics[] = "FORKGC_REPORT_STATS";
+static const char env_report_statistics[] = "FORKSCAN_REPORT_STATS";
 
-static const char env_sweeper_threads[] = "FORKGC_SWEEPER_THREAD_COUNT";
+static const char env_sweeper_threads[] = "FORKSCAN_SWEEPER_THREAD_COUNT";
 
 static const char env_throttling_queue[] = "FORKSCAN_THROTTLING_QUEUE";
 
