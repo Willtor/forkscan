@@ -38,7 +38,7 @@ THE SOFTWARE.
 /*                                  Macros                                  */
 /****************************************************************************/
 
-#define MAX_TRACE_DEPTH 32
+#define MAX_TRACE_DEPTH 64
 #define BINARY_THRESHOLD 32
 #define MAX_RANGES 2048
 #define MAX_RANGE_SIZE (256 * 1024 * 1024)
@@ -414,6 +414,7 @@ void forkgc_child (gc_data_t *gc_data, int fd)
         == __sync_fetch_and_add(&gc_data->completed_children, 1)) {
         // Last process out.  See if there are any remaining untraced refs.
         if (gc_data->cutoff_reached > 0) {
+            fprintf(stderr, "Doing extra cleanup.\n");
             cleanup_trace(gc_data);
         }
 
