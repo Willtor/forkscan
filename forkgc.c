@@ -112,15 +112,6 @@ static sweeper_work_t g_sweeper_work[MAX_SWEEPER_THREADS];
 
 static volatile size_t g_total_sweep_time = 0;
 
-size_t rdtsc ()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    size_t ret = (size_t)(ts.tv_sec * (1000));
-    ret += (size_t)(ts.tv_nsec / (1000 * 1000));
-    return ret;
-}
-
 static void address_range (sweeper_work_t *work)
 {
     gc_data_t *gc_data = work->unref_config->gc_data;
@@ -168,7 +159,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
 
     g_signal_mode = MODE_SWEEP;
     g_received_signal = 0;
-    start = rdtsc();
+    start = forkscan_rdtsc();
     sig_count = forkgc_proc_signal(SIGFORKGC);
     if (sig_count == 0) return 0; // Program is about to exit.
     addrs_per_thread = gc_data->n_addrs / sig_count;
@@ -197,7 +188,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
     }
     g_gc_waiting = GC_NOT_WAITING;
     pthread_mutex_unlock(&g_gc_mutex);
-    end = rdtsc();
+    end = forkscan_rdtsc();
 
     // Save time.
     size_t total_time = end > start ? end - start : 0;
@@ -333,7 +324,7 @@ static void garbage_collect (gc_data_t *gc_data)
     size_t start, end;
     g_signal_mode = MODE_SNAPSHOT;
     g_received_signal = 0;
-    start = rdtsc();
+    start = forkscan_rdtsc();
     sig_count = forkgc_proc_signal(SIGFORKGC);
     while (g_received_signal < sig_count) pthread_yield();
     child_pid = fork();
@@ -351,7 +342,7 @@ static void garbage_collect (gc_data_t *gc_data)
 
     ++g_cleanup_counter;
     close(pipefd[PIPE_WRITE]);
-    end = rdtsc();
+    end = forkscan_rdtsc();
     g_total_fork_time += end - start;
 
     // Wait for the child to complete the scan.

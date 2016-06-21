@@ -25,7 +25,7 @@ THE SOFTWARE.
 
 #include "queue.h"
 
-//#define DEEP_REFERENCES 1
+#define MAX_MARK_AND_SWEEP_RANGES 4096
 
 typedef struct gc_data_t gc_data_t;
 

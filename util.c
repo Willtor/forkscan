@@ -324,3 +324,15 @@ void forkgc_util_randomize (size_t *addrs, int n)
         }
     }
 }
+
+/**
+ * Get a timestamp in ms.
+ */
+size_t forkscan_rdtsc ()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    size_t ret = (size_t)(ts.tv_sec * (1000));
+    ret += (size_t)(ts.tv_nsec / (1000 * 1000));
+    return ret;
+}

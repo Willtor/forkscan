@@ -154,4 +154,9 @@ void forkgc_fatal (const char *format, ...);
 void forkgc_util_randomize (size_t *addrs, int n);
 void forkgc_util_sort (size_t *a, int length);
 
+/**
+ * Get a timestamp in ms.
+ */
+size_t forkscan_rdtsc ();
+
 #endif // !defined _UTIL_H_

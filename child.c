@@ -38,10 +38,9 @@ THE SOFTWARE.
 /*                                  Macros                                  */
 /****************************************************************************/
 
-#define MAX_TRACE_DEPTH 64
+#define MAX_TRACE_DEPTH 32
 #define BINARY_THRESHOLD 32
-#define MAX_RANGES 2048
-#define MAX_RANGE_SIZE (256 * 1024 * 1024)
+#define MAX_RANGE_SIZE (128 * 1024 * 1024)
 #define MAX_CHILDREN 8
 #define MEMORY_THRESHOLD (1024 * 1024 * 128)
 
@@ -52,7 +51,7 @@ struct trace_stats_t
     size_t min, max;
 };
 
-static mem_range_t g_ranges[MAX_RANGES];
+static mem_range_t g_ranges[MAX_MARK_AND_SWEEP_RANGES];
 static int g_n_ranges;
 static size_t g_bytes_to_scan;
 
@@ -273,10 +272,24 @@ static void search_range (mem_range_t *range, gc_data_t *gc_data)
 {
     size_t *mem;
 
+    /*
+#ifndef NDEBUG
+    size_t start, end, total;
+    start = forkscan_rdtsc();
+#endif
+    */
     assert(range);
 
     mem = (size_t*)range->low;
     find_roots(mem, (range->high - range->low) / sizeof(size_t), gc_data);
+
+    /*
+#ifndef NDEBUG
+    end = forkscan_rdtsc();
+    total = end - start;
+    fprintf(stderr, "  search took %zu ms.\n", total);
+#endif
+    */
     return;
 }
 
@@ -374,7 +387,7 @@ static int collect_ranges (void *p,
                 ++g_n_ranges;
             }
             g_ranges[g_n_ranges++] = next;
-            if (g_n_ranges >= MAX_RANGES) {
+            if (g_n_ranges >= MAX_MARK_AND_SWEEP_RANGES) {
                 forkgc_fatal("Too many memory ranges.\n");
             }
         }
@@ -394,19 +407,16 @@ void forkgc_child (gc_data_t *gc_data, int fd)
     int n_siblings = MIN_OF(MAX_CHILDREN,
                             g_bytes_to_scan / MEMORY_THRESHOLD);
     n_siblings = MIN_OF(n_siblings, g_n_ranges);
-    // n_siblings could be zero, in which case we don't fork.
+    n_siblings = MAX_OF(n_siblings, 1);
+
     int child_id = 0;
-    for (child_id = 0; child_id < n_siblings; ++child_id) {
+    for (child_id = 0; child_id < n_siblings - 1; ++child_id) {
         if (fork() == 0) break;
     }
-    ++n_siblings;
 
     // Scan this child's ranges.
-    int range_block = g_n_ranges / n_siblings;
-    int max_range = child_id == n_siblings - 1
-        ? g_n_ranges : (child_id + 1) * range_block;
     int i;
-    for (i = child_id * range_block; i < max_range; ++i) {
+    for (i = child_id; i < g_n_ranges; i += n_siblings) {
         search_range(&g_ranges[i], gc_data);
     }
 
@@ -414,7 +424,6 @@ void forkgc_child (gc_data_t *gc_data, int fd)
         == __sync_fetch_and_add(&gc_data->completed_children, 1)) {
         // Last process out.  See if there are any remaining untraced refs.
         if (gc_data->cutoff_reached > 0) {
-            fprintf(stderr, "Doing extra cleanup.\n");
             cleanup_trace(gc_data);
         }
 
