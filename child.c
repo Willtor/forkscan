@@ -38,7 +38,7 @@ THE SOFTWARE.
 /*                                  Macros                                  */
 /****************************************************************************/
 
-#define LOOKASIDE_SZ 0x4000
+#define LOOKASIDE_SZ 0x2000
 #define MAX_TRACE_DEPTH 32
 #define BINARY_THRESHOLD 32
 #define MAX_RANGE_SIZE (4 * 1024 * 1024)
@@ -550,15 +550,14 @@ void forkgc_child (gc_data_t *gc_data, int fd)
             size_t addr = gc_data->addrs[i];
             if ((addr & 0x3) == 0x1) {
                 // Node that has been marked but not recursively searched.
-                //gc_data->addrs[i] = addr | 0x2;
                 if (BCAS(&gc_data->addrs[i], addr, addr | 0x2)) {
-                if (recursive_mark(addr, gc_data, &ts, 1)) {
-                    // Other nodes were found and marked during this round.
-                    // There will need to be another round.
-                    if (0 == gc_data->more_marking_tbd) {
-                        gc_data->more_marking_tbd = 1;
+                    if (recursive_mark(addr, gc_data, &ts, 1)) {
+                        // Other nodes were found and marked during this round.
+                        // There will need to be another round.
+                        if (0 == gc_data->more_marking_tbd) {
+                            gc_data->more_marking_tbd = 1;
+                        }
                     }
-                }
                 }
             }
         }
