@@ -153,6 +153,7 @@ void forkgc_fatal (const char *format, ...);
 
 void forkgc_util_randomize (size_t *addrs, int n);
 void forkgc_util_sort (size_t *a, int length);
+int forkgc_util_compact (size_t *a, int length);
 
 /**
  * Get a timestamp in ms.

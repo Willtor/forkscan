@@ -326,6 +326,27 @@ void forkgc_util_randomize (size_t *addrs, int n)
 }
 
 /**
+ * Compact a sorted list with duplicates and return the savings.
+ */
+int forkgc_util_compact (size_t *a, int length)
+{
+    int search, write = 0;
+
+    if (length < 2) return 0;
+
+    for (search = 1; search < length; ++search) {
+        if (a[search] == a[write]) continue;
+        ++write;
+        if (write < search) {
+            a[write] = a[search];
+        }
+    }
+
+    ++write;
+    return length - write;
+}
+
+/**
  * Get a timestamp in ms.
  */
 size_t forkscan_rdtsc ()

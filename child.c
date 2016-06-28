@@ -38,10 +38,11 @@ THE SOFTWARE.
 /*                                  Macros                                  */
 /****************************************************************************/
 
+#define LOOKASIDE_SZ 0x4000
 #define MAX_TRACE_DEPTH 32
 #define BINARY_THRESHOLD 32
-#define MAX_RANGE_SIZE (128 * 1024 * 1024)
-#define MAX_CHILDREN 8
+#define MAX_RANGE_SIZE (4 * 1024 * 1024)
+#define MAX_CHILDREN 16
 #define MEMORY_THRESHOLD (1024 * 1024 * 128)
 
 typedef struct trace_stats_t trace_stats_t;
@@ -54,6 +55,8 @@ struct trace_stats_t
 static mem_range_t g_ranges[MAX_MARK_AND_SWEEP_RANGES];
 static int g_n_ranges;
 static size_t g_bytes_to_scan;
+static size_t g_lookaside_list[LOOKASIDE_SZ];
+static int g_lookaside_count = 0;
 
 int is_ref (gc_data_t *gc_data, int loc, size_t cmp)
 {
@@ -106,6 +109,73 @@ static int addr_find (size_t val, gc_data_t *gc_data)
                             ? gc_data->n_addrs
                             : (v + 1) * (PAGESIZE / sizeof(size_t)));
     return loc;
+}
+
+static int addr_find_hint (size_t val, gc_data_t *gc_data, int hint)
+{
+    size_t cmp = gc_data->addrs[hint];
+    if (val <= cmp) return hint;
+
+    // FIXME: Should parameterize cache-line size, etc.  Not good code.
+    size_t cmp_addr = (size_t)&gc_data->addrs[hint];
+    cmp_addr &= ~(size_t)63;
+    cmp_addr += 56;
+    int remaining_line =
+        (cmp_addr - (size_t)&gc_data->addrs[hint]) / sizeof(size_t);
+    remaining_line += 8;
+
+    int i;
+    for (i = 0; i < remaining_line; ++i) {
+        hint = MIN_OF(gc_data->n_addrs, hint + 1);
+        cmp = gc_data->addrs[hint];
+        if (val <= cmp) return hint;
+    }
+
+    return addr_find(val, gc_data);
+}
+
+static inline int recursive_mark (size_t addr,
+                                  gc_data_t *gc_data,
+                                  trace_stats_t *ts,
+                                  int depth)
+{
+    size_t *ptr = (size_t*)PTR_MASK(addr);
+    size_t n_vals = MALLOC_USABLE_SIZE(ptr) / sizeof(size_t);
+    size_t i;
+    int ret = 0;
+
+    for (i = 0; i < n_vals; ++i) {
+        size_t val = PTR_MASK(ptr[i]);
+        if (val < ts->min || val > ts->max) continue;
+        int loc = addr_find(val, gc_data);
+        if (is_ref(gc_data, loc, val)) {
+            // Found a hit inside our pool.
+            size_t target = gc_data->addrs[loc];
+            if (target & 0x2) {
+                // Already recursively searched.
+                continue;
+            }
+
+            if (target & 0x3 && depth < 1) {
+                // Already marked and we can't go any deeper.
+                continue;
+            }
+
+            if (depth < 1) {
+                // Not marked, but we can't go any deeper.  Mark it and
+                // continue.
+                BCAS(&gc_data->addrs[loc], target, target | 0x1);
+                ret = 1;
+            }
+
+            if (BCAS(&gc_data->addrs[loc], target, target | 0x3)) {
+                // We will do a recursive search.
+                ret |= recursive_mark(PTR_MASK(addr), gc_data, ts, depth - 1);
+            }
+        }
+    }
+
+    return ret;
 }
 
 /**
@@ -183,6 +253,58 @@ static void cleanup_trace (gc_data_t *gc_data)
     }
 }
 
+size_t g_total_sort;
+
+static void lookup_lookaside_list (gc_data_t *gc_data, int force)
+{ // FIXME: Get rid of force parameter.
+    int i;
+    size_t cmp = 0;
+    int savings;
+
+    size_t start_sort, end_sort;
+    start_sort = forkscan_rdtsc();
+    forkgc_util_sort(g_lookaside_list, g_lookaside_count);
+    end_sort = forkscan_rdtsc();
+    g_total_sort += end_sort - start_sort;
+
+    savings = forkgc_util_compact(g_lookaside_list, g_lookaside_count);
+    g_lookaside_count -= savings;
+
+    /*
+    if (!force && savings > 2048) {
+        forkgc_util_randomize(g_lookaside_list, g_lookaside_count);
+        return;
+    }
+    */
+
+    int cached_loc = 0;
+    for (i = 0; i < g_lookaside_count; ++i) {
+        if (cmp == g_lookaside_list[i]) continue; // Possible duplicates.
+        cmp = g_lookaside_list[i];
+        int loc = addr_find_hint(cmp, gc_data, cached_loc);
+        cached_loc = loc;
+        if (is_ref(gc_data, loc, cmp)) {
+            // It's a pointer somewhere into the allocated region of memory.
+            size_t addr = gc_data->addrs[loc];
+            if (!(addr & 0x1)) {
+                // No need to be atomic.  Any processes racing with us are
+                // trying to write the same value.
+                gc_data->addrs[loc] = addr | 0x1;
+            }
+        }
+#ifndef NDEBUG
+        else {
+            int loc2 = binary_search(cmp, gc_data->addrs,
+                                     0, gc_data->n_addrs);
+            // FIXME: Assert does not catch all bad cases.
+            assert(gc_data->addrs[loc2] != cmp);
+        }
+#endif
+    }
+
+    g_lookaside_count = 0;
+}
+
 /**
  * Search through the given chunk of memory looking for references into the
  * memory we're tracking from outside the memory we're tracking.  These roots
@@ -222,8 +344,8 @@ static void find_roots (size_t *mem, size_t range_size, gc_data_t *gc_data)
 
     for ( ; i < range_size; ++i) {
         if (guarded_addr == (size_t)(&mem[i])) {
-            // Skip a little.  This area will be searched during the mark-and-
-            // sweep phase.
+            // Skip a little.  This area will be searched during the marking
+            // phase.
             size_t sz = MALLOC_USABLE_SIZE((void*)guarded_addr);
             assert(sz > 0);
             i += ((int)sz) / sizeof(size_t) - 1;
@@ -240,57 +362,14 @@ static void find_roots (size_t *mem, size_t range_size, gc_data_t *gc_data)
 
         if (cmp < ts.min || cmp > ts.max) continue; // Out-of-range.
 
-        int loc = addr_find(cmp, gc_data);
-        if (is_ref(gc_data, loc, cmp)) {
-            // It's a pointer somewhere into the allocated region of memory.
-            size_t addr = gc_data->addrs[loc];
-            if ((addr & 0x3) == 0x3) continue; // Already checked.
+        // Put the address aside for future lookup.  By aggregating, we can
+        // reduce the number of cache misses.
+        g_lookaside_list[g_lookaside_count++] = cmp;
+        if (g_lookaside_count < LOOKASIDE_SZ) continue;
 
-            if (BCAS(&gc_data->addrs[loc], addr, addr | 0x3)) {
-                // Do recursive search of this node to look for deeper nodes.
-                if (0 != recursive_trace(gc_data, &ts, loc, MAX_TRACE_DEPTH)) {
-                    // Reached a cutoff -- there are unsearched nodes in the
-                    // address list.
-                    if (0 == gc_data->cutoff_reached) {
-                        gc_data->cutoff_reached = 1;
-                    }
-                }
-            }
-        }
-#ifndef NDEBUG
-        else {
-            int loc2 = binary_search(cmp, gc_data->addrs,
-                                     0, gc_data->n_addrs);
-            // FIXME: Assert does not catch all bad cases.
-            assert(gc_data->addrs[loc2] != cmp);
-        }
-#endif
+        // The lookaside list is full.
+        lookup_lookaside_list(gc_data, /*force=*/0);
     }
-}
-
-static void search_range (mem_range_t *range, gc_data_t *gc_data)
-{
-    size_t *mem;
-
-    /*
-#ifndef NDEBUG
-    size_t start, end, total;
-    start = forkscan_rdtsc();
-#endif
-    */
-    assert(range);
-
-    mem = (size_t*)range->low;
-    find_roots(mem, (range->high - range->low) / sizeof(size_t), gc_data);
-
-    /*
-#ifndef NDEBUG
-    end = forkscan_rdtsc();
-    total = end - start;
-    fprintf(stderr, "  search took %zu ms.\n", total);
-#endif
-    */
-    return;
 }
 
 /**
@@ -404,28 +483,111 @@ void forkgc_child (gc_data_t *gc_data, int fd)
     gc_data->completed_children = 0;
     gc_data->cutoff_reached = 0;
 
+    trace_stats_t ts;
+    ts.min = PTR_MASK(gc_data->addrs[0]);
+    ts.max = PTR_MASK(gc_data->addrs[gc_data->n_addrs - 1]);
+
     int n_siblings = MIN_OF(MAX_CHILDREN,
                             g_bytes_to_scan / MEMORY_THRESHOLD);
     n_siblings = MIN_OF(n_siblings, g_n_ranges);
     n_siblings = MAX_OF(n_siblings, 1);
 
-    int child_id = 0;
-    for (child_id = 0; child_id < n_siblings - 1; ++child_id) {
+    fprintf(stderr, "Forking %d mark processes.\n", n_siblings);
+
+    gc_data->sibling_mode = SIBLING_MODE_MARKING;
+
+    int sibling_id = 0;
+    for (sibling_id = 0; sibling_id < n_siblings - 1; ++sibling_id) {
         if (fork() == 0) break;
     }
 
-    // Scan this child's ranges.
+    size_t start, end;
+
+    start = forkscan_rdtsc();
+
+    // Scan this child's ranges of memory, looking for roots into our pool.
     int i;
-    for (i = child_id; i < g_n_ranges; i += n_siblings) {
-        search_range(&g_ranges[i], gc_data);
+    size_t total_memory = 0;
+    for (i = sibling_id; i < g_n_ranges; i += n_siblings) {
+        // Stride memory in this for-loop.  Many chunks will have few or no
+        // references and get scanned quickly.  Others have lots of refs and
+        // are much slower.  It's important that the fork'd siblings break
+        // up the work evenly, or some will sit around waiting while there's
+        // work to be done.
+
+        size_t *mem = (size_t*)g_ranges[i].low;
+        find_roots(mem,
+                   (g_ranges[i].high - g_ranges[i].low)
+                   / sizeof(size_t), gc_data);
+        total_memory += g_ranges[i].high - g_ranges[i].low;
     }
+
+    if (g_lookaside_count > 0) {
+        // Catch any remainders.
+        lookup_lookaside_list(gc_data, /*force=*/1);
+    }
+
+    end = forkscan_rdtsc();
+    fprintf(stderr, "find_roots took %zu ms.  (mem: 0x%zx, sort: %zu)\n",
+            end - start,
+            total_memory,
+            g_total_sort);
+
+    start = end;
+
+    // Now, break up the pool into chunks for each process to handle, BFS-
+    // style.
+    int addrs_range_size, addrs_start, addrs_end;
+    addrs_range_size = gc_data->n_addrs / n_siblings;
+    addrs_start = sibling_id * addrs_range_size;
+    addrs_end = sibling_id == n_siblings - 1 ?
+        gc_data->n_addrs : (sibling_id + 1) * addrs_range_size;
+    while (gc_data->sibling_mode != SIBLING_MODE_DONE) {
+        int round = gc_data->round;
+
+        // Run through this process's chunk looking for things to mark.
+        for (i = addrs_start; i < addrs_end; ++i) {
+            size_t addr = gc_data->addrs[i];
+            if ((addr & 0x3) == 0x1) {
+                // Node that has been marked but not recursively searched.
+                //gc_data->addrs[i] = addr | 0x2;
+                if (BCAS(&gc_data->addrs[i], addr, addr | 0x2)) {
+                if (recursive_mark(addr, gc_data, &ts, 1)) {
+                    // Other nodes were found and marked during this round.
+                    // There will need to be another round.
+                    if (0 == gc_data->more_marking_tbd) {
+                        gc_data->more_marking_tbd = 1;
+                    }
+                }
+                }
+            }
+        }
+
+        if (n_siblings - 1
+            == __sync_fetch_and_add(&gc_data->completed_children, 1)) {
+
+            // Last one done with this round.  Check to see if anything more
+            // needs to be done.
+
+            if (!gc_data->more_marking_tbd) {
+                // Nobody marked anything.  All done.
+                gc_data->sibling_mode = SIBLING_MODE_DONE;
+            } else {
+                gc_data->more_marking_tbd = 0;
+            }
+            gc_data->completed_children = 0;
+            gc_data->round++;
+        } else {
+            while (round == gc_data->round) pthread_yield();
+        }
+    }
+
+    end = forkscan_rdtsc();
+    fprintf(stderr, "  chunk time: %zu ms in %d rounds.\n", end - start,
+            gc_data->round);
 
     if (n_siblings - 1
         == __sync_fetch_and_add(&gc_data->completed_children, 1)) {
-        // Last process out.  See if there are any remaining untraced refs.
-        if (gc_data->cutoff_reached > 0) {
-            cleanup_trace(gc_data);
-        }
 
         // Alert the uber parent.
         if (sizeof(size_t) != write(fd, &g_bytes_to_scan, sizeof(size_t))) {

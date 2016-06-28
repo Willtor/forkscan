@@ -27,20 +27,28 @@ THE SOFTWARE.
 
 #define MAX_MARK_AND_SWEEP_RANGES 4096
 
+typedef enum sibling_mode_t sibling_mode_t;
+
+enum sibling_mode_t { SIBLING_MODE_MARKING,
+                      SIBLING_MODE_DONE };
+
 typedef struct gc_data_t gc_data_t;
 
 struct gc_data_t {
     gc_data_t *next;
     size_t *addrs;
-    /////////////////////////////////////////// FIXME: unnecessary?
     size_t *minimap;
+    /////////////////////////////////////////// FIXME: unnecessary?
     int *refs;
     ///////////////////////////////////////////
     int n_addrs;
-    int n_minimap; // unnecessary?
+    int n_minimap;
     int capacity;
-    int completed_children;
     int cutoff_reached;
+    sibling_mode_t sibling_mode;
+    int completed_children;
+    int more_marking_tbd;
+    volatile int round; // Trust we won't need more than 2 billion rounds.
 };
 
 int is_ref (gc_data_t *gc_data, int loc, size_t cmp);
