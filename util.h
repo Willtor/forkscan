@@ -139,6 +139,7 @@ thread_data_t *forkgc_util_thread_list_find (thread_list_t *tl,
                                              size_t addr);
 void forkgc_util_push_free_list (free_t *free_list);
 free_t *forkgc_util_pop_free_list ();
+void forkscan_util_free_ptrs (thread_data_t *td);
 
 /****************************************************************************/
 /*                              I/O functions.                              */

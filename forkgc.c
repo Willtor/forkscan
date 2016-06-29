@@ -196,10 +196,8 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
 
     // Compact the list.
     int write_position = 0;
-    int saved = 0; // FIXME: Get rid of this metric?  Does it matter?
     for (i = 0; i < gc_data->n_addrs; ++i) {
-        if (0 == (gc_data->addrs[i] & 1)) ++saved;
-        else {
+        if (0 != (gc_data->addrs[i] & 1)) {
             // Address has its low bit set: still alive.
             gc_data->addrs[write_position] = PTR_MASK(gc_data->addrs[i]);
             ++write_position;
@@ -445,7 +443,7 @@ void forkgc_initiate_collection (gc_data_t *gc_data)
     pthread_mutex_unlock(&g_gc_mutex);
 
     while (g_waiting_collects > g_forkscan_throttling_queue) {
-        //pthread_yield(); // FIXME: Yield.
+        //pthread_yield(); // FIXME: Yield?
         pthread_mutex_lock(&g_client_waiting_lock);
         if (g_waiting_collects > g_forkscan_throttling_queue) {
             pthread_cond_wait(&g_client_waiting_cond, &g_client_waiting_lock);

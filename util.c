@@ -213,6 +213,29 @@ free_t *forkgc_util_pop_free_list ()
     return free_list;
 }
 
+void forkscan_util_free_ptrs (thread_data_t *td)
+{
+    int i;
+
+    assert(td);
+    extern int g_frees_required;
+    for (i = 0; i < g_frees_required; ++i) {
+        free_t *head = td->free_list;
+        if (NULL == head) {
+            td->free_list = forkgc_util_pop_free_list();
+            if (NULL == head) return;
+            continue;
+        }
+        td->free_list = head->next;
+        head->next = NULL;
+#ifndef NDEBUG
+        memset(head, 0xF0, MALLOC_USABLE_SIZE(head));
+#else
+        FREE(head);
+#endif
+    }
+}
+
 /****************************************************************************/
 /*                              I/O functions.                              */
 /****************************************************************************/
