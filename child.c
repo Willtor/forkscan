@@ -253,10 +253,10 @@ static void cleanup_trace (gc_data_t *gc_data)
     }
 }
 
-size_t g_total_sort;
+size_t g_total_sort; // FIXME: For debugging -- get rid of this.
 
-static void lookup_lookaside_list (gc_data_t *gc_data, int force)
-{ // FIXME: Get rid of force parameter.
+static void lookup_lookaside_list (gc_data_t *gc_data)
+{
     int i;
     size_t cmp = 0;
     int savings;
@@ -269,13 +269,6 @@ static void lookup_lookaside_list (gc_data_t *gc_data, int force)
 
     savings = forkgc_util_compact(g_lookaside_list, g_lookaside_count);
     g_lookaside_count -= savings;
-
-    /*
-    if (!force && savings > 2048) {
-        forkgc_util_randomize(g_lookaside_list, g_lookaside_count);
-        return;
-    }
-    */
 
     int cached_loc = 0;
     for (i = 0; i < g_lookaside_count; ++i) {
@@ -368,7 +361,7 @@ static void find_roots (size_t *mem, size_t range_size, gc_data_t *gc_data)
         if (g_lookaside_count < LOOKASIDE_SZ) continue;
 
         // The lookaside list is full.
-        lookup_lookaside_list(gc_data, /*force=*/0);
+        lookup_lookaside_list(gc_data);
     }
 }
 
@@ -524,7 +517,7 @@ void forkgc_child (gc_data_t *gc_data, int fd)
 
     if (g_lookaside_count > 0) {
         // Catch any remainders.
-        lookup_lookaside_list(gc_data, /*force=*/1);
+        lookup_lookaside_list(gc_data);
     }
 
     end = forkscan_rdtsc();
