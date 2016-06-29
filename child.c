@@ -226,33 +226,6 @@ static inline int recursive_trace (gc_data_t *gc_data,
     return cutoff;
 }
 
-/**
- * Perform a trace on the tracked addresses.  This is only necessary if the
- * cutoff was reached by any of the sub-processes.
- */
-static void cleanup_trace (gc_data_t *gc_data)
-{
-    trace_stats_t ts;
-    int i;
-    ts.min = PTR_MASK(gc_data->addrs[0]);
-    ts.max = PTR_MASK(gc_data->addrs[gc_data->n_addrs - 1]);
-
-    for (i = 0; i < gc_data->n_addrs; ++i) {
-        size_t addr = gc_data->addrs[i];
-        if (!(addr & 0x1) || (addr & 0x2)) {
-            // It is not marked as being connected to a root, or it has been
-            // marked and a sub-trace has been run.  Either way, nothing for
-            // us to do here.
-            continue;
-        }
-        if (!BCAS(&gc_data->addrs[i], addr, addr | 0x3)) {
-            // Another thread got to it before we did.  That's okay, too.
-            continue;
-        }
-        recursive_trace(gc_data, &ts, i, MAX_TRACE_DEPTH);
-    }
-}
-
 size_t g_total_sort; // FIXME: For debugging -- get rid of this.
 
 static void lookup_lookaside_list (gc_data_t *gc_data)
