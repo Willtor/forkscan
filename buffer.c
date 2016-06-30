@@ -51,16 +51,12 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
     // How many pages of memory are needed to store the minimap?
     size_t pages_of_minimap = ((pages_of_addrs * sizeof(size_t))
                                + PAGESIZE - sizeof(size_t)) / PAGESIZE;
-    // How many pages are needed to store the reference count array?
-    size_t pages_of_count = ((capacity * sizeof(int))
-                             + PAGESIZE - sizeof(int)) / PAGESIZE;
     // Total pages needed is the number of pages for the addresses, plus the
     // number of pages needed for the minimap, plus one (for the
     // addr_buffer_t).
     char *p =
         (char*)forkgc_alloc_mmap_shared((pages_of_addrs     // addr array.
                                          + pages_of_minimap // minimap.
-                                         + pages_of_count   // ref count.
                                          + 1)               // struct page.
                                         * PAGESIZE);
 
@@ -74,10 +70,6 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
 
     ab->minimap = (size_t*)(p + offset);
     offset += pages_of_minimap * PAGESIZE;
-
-    // FIXME: refs no longer used.
-    ab->refs = (int*)(p + offset);
-    offset += pages_of_count * PAGESIZE;
 
     ab->capacity = capacity;
 

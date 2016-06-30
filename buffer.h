@@ -34,9 +34,6 @@ struct addr_buffer_t {
     addr_buffer_t *next;
     size_t *addrs;
     size_t *minimap;
-    /////////////////////////////////////////// FIXME: unnecessary?
-    int *refs;
-    ///////////////////////////////////////////
     int n_addrs;
     int n_minimap;
     int capacity;
