@@ -26,8 +26,6 @@ THE SOFTWARE.
 #include "buffer.h"
 #include "queue.h"
 
-#define MAX_MARK_AND_SWEEP_RANGES 4096
-
 void forkgc_child (gc_data_t *gc_data, int fd);
 
 #endif // !defined _CHILD_H_

@@ -38,6 +38,7 @@ THE SOFTWARE.
 /*                                  Macros                                  */
 /****************************************************************************/
 
+#define MAX_MARK_AND_SWEEP_RANGES 4096
 #define LOOKASIDE_SZ 0x2000
 #define MAX_TRACE_DEPTH 32
 #define BINARY_THRESHOLD 32
