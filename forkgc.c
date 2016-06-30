@@ -336,7 +336,7 @@ static void garbage_collect (addr_buffer_t *ab)
     }
 
     close(pipefd[PIPE_READ]);
-    forkgc_alloc_munmap(working_data); // FIXME: ...
+    forkscan_release_buffer(working_data);
 
     // Free up unnecessary space.
     assert(ab);
@@ -348,7 +348,7 @@ static void garbage_collect (addr_buffer_t *ab)
     } else assert(NULL == g_uncollected_data);
     while (ab) {
         tmp = ab->next;
-        forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
+        forkscan_release_buffer(ab);
         ab = tmp;
     }
 }

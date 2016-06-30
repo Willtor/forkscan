@@ -79,10 +79,12 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
     ab->refs = (int*)(p + offset);
     offset += pages_of_count * PAGESIZE;
 
+    ab->capacity = capacity;
+
     return ab;
 }
 
 void forkscan_release_buffer (addr_buffer_t *ab)
 {
-
+    forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
 }
