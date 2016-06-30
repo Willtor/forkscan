@@ -238,39 +238,7 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *data_list)
 
     assert(n_addrs != 0);
 
-    // How many pages of memory are needed to store this many addresses?
-    size_t pages_of_addrs = ((n_addrs * sizeof(size_t))
-                             + PAGESIZE - sizeof(size_t)) / PAGESIZE;
-    // How many pages of memory are needed to store the minimap?
-    size_t pages_of_minimap = ((pages_of_addrs * sizeof(size_t))
-                               + PAGESIZE - sizeof(size_t)) / PAGESIZE;
-    // How many pages are needed to store the reference count array?
-    size_t pages_of_count = ((n_addrs * sizeof(int))
-                             + PAGESIZE - sizeof(int)) / PAGESIZE;
-    // Total pages needed is the number of pages for the addresses, plus the
-    // number of pages needed for the minimap, plus one (for the
-    // addr_buffer_t).
-    char *p =
-        (char*)forkgc_alloc_mmap_shared((pages_of_addrs     // addr array.
-                                         + pages_of_minimap // minimap.
-                                         + pages_of_count   // ref count.
-                                         + 1)               // struct page.
-                                        * PAGESIZE);
-
-    // Perform assignments as offsets into the block that was bulk-allocated.
-    size_t offset = 0;
-    ret = (addr_buffer_t*)p;
-    offset += PAGESIZE;
-
-    ret->addrs = (size_t*)(p + offset);
-    offset += pages_of_addrs * PAGESIZE;
-
-    ret->minimap = (size_t*)(p + offset);
-    offset += pages_of_minimap * PAGESIZE;
-
-    ret->refs = (int*)(p + offset);
-    offset += pages_of_count * PAGESIZE;
-
+    ret = forkscan_make_aggregate_buffer(n_addrs);
     ret->n_addrs = n_addrs;
 
     // Copy the addresses over.

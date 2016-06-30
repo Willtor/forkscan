@@ -41,7 +41,48 @@ addr_buffer_t *forkscan_make_reclaimer_buffer ()
     return ab;
 }
 
-void forkscan_release_reclaimer_buffer (addr_buffer_t *ab)
+addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
+{
+    addr_buffer_t *ab;
+
+    // How many pages of memory are needed to store this many addresses?
+    size_t pages_of_addrs = ((capacity * sizeof(size_t))
+                             + PAGESIZE - sizeof(size_t)) / PAGESIZE;
+    // How many pages of memory are needed to store the minimap?
+    size_t pages_of_minimap = ((pages_of_addrs * sizeof(size_t))
+                               + PAGESIZE - sizeof(size_t)) / PAGESIZE;
+    // How many pages are needed to store the reference count array?
+    size_t pages_of_count = ((capacity * sizeof(int))
+                             + PAGESIZE - sizeof(int)) / PAGESIZE;
+    // Total pages needed is the number of pages for the addresses, plus the
+    // number of pages needed for the minimap, plus one (for the
+    // addr_buffer_t).
+    char *p =
+        (char*)forkgc_alloc_mmap_shared((pages_of_addrs     // addr array.
+                                         + pages_of_minimap // minimap.
+                                         + pages_of_count   // ref count.
+                                         + 1)               // struct page.
+                                        * PAGESIZE);
+
+    // Perform assignments as offsets into the block that was bulk-allocated.
+    size_t offset = 0;
+    ab = (addr_buffer_t*)p;
+    offset += PAGESIZE;
+
+    ab->addrs = (size_t*)(p + offset);
+    offset += pages_of_addrs * PAGESIZE;
+
+    ab->minimap = (size_t*)(p + offset);
+    offset += pages_of_minimap * PAGESIZE;
+
+    // FIXME: refs no longer used.
+    ab->refs = (int*)(p + offset);
+    offset += pages_of_count * PAGESIZE;
+
+    return ab;
+}
+
+void forkscan_release_buffer (addr_buffer_t *ab)
 {
 
 }

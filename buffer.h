@@ -49,7 +49,9 @@ struct addr_buffer_t {
 
 addr_buffer_t *forkscan_make_reclaimer_buffer ();
 
-void forkscan_release_reclaimer_buffer (addr_buffer_t *db);
+addr_buffer_t *forkscan_make_aggregate_buffer (int capacity);
+
+void forkscan_release_buffer (addr_buffer_t *db);
 
 #endif // !defined _BUFFER_H_
 
