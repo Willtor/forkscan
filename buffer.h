@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ForkGC authors
+Copyright (c) 2016 Forkscan authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20,14 +20,33 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#ifndef _CHILD_H_
-#define _CHILD_H_
+#ifndef _BUFFER_H_
+#define _BUFFER_H_
 
-#include "buffer.h"
-#include "queue.h"
+typedef enum sibling_mode_t sibling_mode_t;
 
-#define MAX_MARK_AND_SWEEP_RANGES 4096
+enum sibling_mode_t { SIBLING_MODE_MARKING,
+                      SIBLING_MODE_DONE };
 
-void forkgc_child (gc_data_t *gc_data, int fd);
+typedef struct gc_data_t gc_data_t;
 
-#endif // !defined _CHILD_H_
+struct gc_data_t {
+    gc_data_t *next;
+    size_t *addrs;
+    size_t *minimap;
+    /////////////////////////////////////////// FIXME: unnecessary?
+    int *refs;
+    ///////////////////////////////////////////
+    int n_addrs;
+    int n_minimap;
+    int capacity;
+    int cutoff_reached;
+    sibling_mode_t sibling_mode;
+    int completed_children;
+    int more_marking_tbd;
+    volatile int round; // Trust we won't need more than 2 billion rounds.
+};
+
+
+#endif // !defined _BUFFER_H_
+
