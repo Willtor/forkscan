@@ -73,7 +73,7 @@ typedef struct sweeper_work_t sweeper_work_t;
 
 struct unref_config_t
 {
-    gc_data_t *gc_data;
+    addr_buffer_t *ab;
     size_t min_val, max_val;
 };
 
@@ -89,7 +89,7 @@ int g_frees_required = 8;
 static pthread_mutex_t g_gc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_gc_cond = PTHREAD_COND_INITIALIZER;
 
-static gc_data_t *g_gc_data, *g_uncollected_data;
+static addr_buffer_t *g_addr_buffer, *g_uncollected_data;
 static volatile int g_waiting_collects;
 static pthread_mutex_t g_client_waiting_lock;
 static pthread_cond_t g_client_waiting_cond;
@@ -114,12 +114,12 @@ static volatile size_t g_total_sweep_time = 0;
 
 static void address_range (sweeper_work_t *work)
 {
-    gc_data_t *gc_data = work->unref_config->gc_data;
+    addr_buffer_t *ab = work->unref_config->ab;
     free_t *free_list = NULL;
     int free_list_length = 0;
     int i;
     for (i = work->range_begin; i < work->range_end; ++i) {
-        size_t addr = gc_data->addrs[i];
+        size_t addr = ab->addrs[i];
         assert(addr != 0);
         if (0 == (addr & 1)) {
             // Memory to be freed.
@@ -145,7 +145,7 @@ static void address_range (sweeper_work_t *work)
     }
 }
 
-static int find_unreferenced_nodes (gc_data_t *gc_data)
+static int find_unreferenced_nodes (addr_buffer_t *ab)
 {
     unref_config_t unref_config;
     int sig_count;
@@ -153,16 +153,16 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
     int i;
     size_t start, end;
 
-    unref_config.gc_data = gc_data;
-    unref_config.min_val = gc_data->addrs[0];
-    unref_config.max_val = gc_data->addrs[gc_data->n_addrs - 1];
+    unref_config.ab = ab;
+    unref_config.min_val = ab->addrs[0];
+    unref_config.max_val = ab->addrs[ab->n_addrs - 1];
 
     g_signal_mode = MODE_SWEEP;
     g_received_signal = 0;
     start = forkscan_rdtsc();
     sig_count = forkgc_proc_signal(SIGFORKGC);
     if (sig_count == 0) return 0; // Program is about to exit.
-    addrs_per_thread = gc_data->n_addrs / sig_count;
+    addrs_per_thread = ab->n_addrs / sig_count;
 
     // Set up work for the threads.
     for (i = 0; i < sig_count; ++i) {
@@ -170,7 +170,7 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
         g_sweeper_work[i].range_begin = i * addrs_per_thread;
         g_sweeper_work[i].range_end = (i + 1) * addrs_per_thread;
     }
-    g_sweeper_work[sig_count - 1].range_end = gc_data->n_addrs;
+    g_sweeper_work[sig_count - 1].range_end = ab->n_addrs;
     g_sweepers_working = 0;
     g_sweepers_remaining = sig_count;
 
@@ -196,36 +196,36 @@ static int find_unreferenced_nodes (gc_data_t *gc_data)
 
     // Compact the list.
     int write_position = 0;
-    for (i = 0; i < gc_data->n_addrs; ++i) {
-        if (0 != (gc_data->addrs[i] & 1)) {
+    for (i = 0; i < ab->n_addrs; ++i) {
+        if (0 != (ab->addrs[i] & 1)) {
             // Address has its low bit set: still alive.
-            gc_data->addrs[write_position] = PTR_MASK(gc_data->addrs[i]);
+            ab->addrs[write_position] = PTR_MASK(ab->addrs[i]);
             ++write_position;
         }
     }
-    gc_data->n_addrs = write_position;
+    ab->n_addrs = write_position;
 
     return 0;
 }
 
-static void generate_minimap (gc_data_t *gc_data)
+static void generate_minimap (addr_buffer_t *ab)
 {
     size_t i;
 
-    assert(gc_data);
-    assert(gc_data->addrs);
-    assert(gc_data->minimap);
+    assert(ab);
+    assert(ab->addrs);
+    assert(ab->minimap);
 
-    gc_data->n_minimap = 0;
-    for (i = 0; i < gc_data->n_addrs; i += (PAGESIZE / sizeof(size_t))) {
-        gc_data->minimap[gc_data->n_minimap] = gc_data->addrs[i];
-        ++gc_data->n_minimap;
+    ab->n_minimap = 0;
+    for (i = 0; i < ab->n_addrs; i += (PAGESIZE / sizeof(size_t))) {
+        ab->minimap[ab->n_minimap] = ab->addrs[i];
+        ++ab->n_minimap;
     }
 }
 
-static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
+static addr_buffer_t *aggregate_addrs (addr_buffer_t *data_list)
 {
-    gc_data_t *ret, *tmp;
+    addr_buffer_t *ret, *tmp;
     size_t n_addrs = 0;
     int list_count = 0;
 
@@ -248,7 +248,8 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     size_t pages_of_count = ((n_addrs * sizeof(int))
                              + PAGESIZE - sizeof(int)) / PAGESIZE;
     // Total pages needed is the number of pages for the addresses, plus the
-    // number of pages needed for the minimap, plus one (for the gc_data_t).
+    // number of pages needed for the minimap, plus one (for the
+    // addr_buffer_t).
     char *p =
         (char*)forkgc_alloc_mmap_shared((pages_of_addrs     // addr array.
                                          + pages_of_minimap // minimap.
@@ -258,7 +259,7 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
 
     // Perform assignments as offsets into the block that was bulk-allocated.
     size_t offset = 0;
-    ret = (gc_data_t*)p;
+    ret = (addr_buffer_t*)p;
     offset += PAGESIZE;
 
     ret->addrs = (size_t*)(p + offset);
@@ -295,22 +296,22 @@ static gc_data_t *aggregate_gc_data (gc_data_t *data_list)
     return ret;
 }
 
-static void garbage_collect (gc_data_t *gc_data)
+static void garbage_collect (addr_buffer_t *ab)
 {
-    gc_data_t *working_data;
+    addr_buffer_t *working_data;
     int sig_count;
     int pipefd[2];
 
     // Include the addrs from the last collection iteration.
     if (g_uncollected_data) {
-        gc_data_t *tmp = g_uncollected_data;
+        addr_buffer_t *tmp = g_uncollected_data;
         while (tmp->next) tmp = tmp->next;
-        tmp->next = gc_data;
-        gc_data = g_uncollected_data;
+        tmp->next = ab;
+        ab = g_uncollected_data;
         g_uncollected_data = NULL;
     }
 
-    working_data = aggregate_gc_data(gc_data);
+    working_data = aggregate_addrs(ab);
 
     // Open a pipe for communication between parent and child.
     if (0 != pipe2(pipefd, O_DIRECT)) {
@@ -354,33 +355,33 @@ static void garbage_collect (gc_data_t *gc_data)
     // Identify unreferenced memory and free it.
     find_unreferenced_nodes(working_data);
 
-    gc_data->n_addrs = 0;
+    ab->n_addrs = 0;
     int i;
     for (i = 0; i < working_data->n_addrs; ++i) {
-        if (g_uncollected_data == NULL) g_uncollected_data = gc_data;
-        if (gc_data->n_addrs >= gc_data->capacity) {
-            gc_data = gc_data->next;
-            assert(gc_data != NULL);
-            gc_data->n_addrs = 0;
+        if (g_uncollected_data == NULL) g_uncollected_data = ab;
+        if (ab->n_addrs >= ab->capacity) {
+            ab = ab->next;
+            assert(ab != NULL);
+            ab->n_addrs = 0;
         }
-        gc_data->addrs[gc_data->n_addrs++] = working_data->addrs[i];
+        ab->addrs[ab->n_addrs++] = working_data->addrs[i];
     }
 
     close(pipefd[PIPE_READ]);
     forkgc_alloc_munmap(working_data); // FIXME: ...
 
     // Free up unnecessary space.
-    assert(gc_data);
-    gc_data_t *tmp;
-    if (gc_data->n_addrs) {
-        tmp = gc_data;
-        gc_data = gc_data->next;
+    assert(ab);
+    addr_buffer_t *tmp;
+    if (ab->n_addrs) {
+        tmp = ab;
+        ab = ab->next;
         tmp->next = NULL;
     } else assert(NULL == g_uncollected_data);
-    while (gc_data) {
-        tmp = gc_data->next;
-        forkgc_alloc_munmap(gc_data); // FIXME: Munmap is bad.
-        gc_data = tmp;
+    while (ab) {
+        tmp = ab->next;
+        forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
+        ab = tmp;
     }
 }
 
@@ -431,12 +432,12 @@ void forkgc_acknowledge_signal ()
 /**
  * Pass a list of pointers to the GC thread for it to collect.
  */
-void forkgc_initiate_collection (gc_data_t *gc_data)
+void forkgc_initiate_collection (addr_buffer_t *ab)
 {
     pthread_mutex_lock(&g_gc_mutex);
     ++g_waiting_collects;
-    gc_data->next = g_gc_data;
-    g_gc_data = gc_data;
+    ab->next = g_addr_buffer;
+    g_addr_buffer = ab;
     if (g_gc_waiting == GC_WAITING_FOR_WORK) {
         pthread_cond_signal(&g_gc_cond);
     }
@@ -457,11 +458,11 @@ void forkgc_initiate_collection (gc_data_t *gc_data)
  */
 void *forkgc_thread (void *ignored)
 {
-    gc_data_t *gc_data;
+    addr_buffer_t *ab;
 
     while ((1)) {
         pthread_mutex_lock(&g_gc_mutex);
-        if (NULL == g_gc_data) {
+        if (NULL == g_addr_buffer) {
             // Wait for somebody to come up with a set of addresses for us to
             // collect.
             g_gc_waiting = GC_WAITING_FOR_WORK;
@@ -469,9 +470,9 @@ void *forkgc_thread (void *ignored)
             g_gc_waiting = GC_NOT_WAITING;
         }
 
-        assert(g_gc_data);
-        gc_data = g_gc_data;
-        g_gc_data = NULL;
+        assert(g_addr_buffer);
+        ab = g_addr_buffer;
+        g_addr_buffer = NULL;
         if (g_waiting_collects > g_forkscan_throttling_queue) {
             g_waiting_collects = 0;
             pthread_mutex_lock(&g_client_waiting_lock);
@@ -483,7 +484,7 @@ void *forkgc_thread (void *ignored)
 
 #ifndef NDEBUG
         int n = 1;
-        gc_data_t *tmp = gc_data;
+        addr_buffer_t *tmp = ab;
         int b_unfreed_data = 0;
         while (NULL != (tmp = tmp->next)) ++n;
         free_t *f = forkgc_util_pop_free_list();
@@ -497,7 +498,7 @@ void *forkgc_thread (void *ignored)
                           : "");
 #endif
 
-        garbage_collect(gc_data);
+        garbage_collect(ab);
     }
 
     return NULL;

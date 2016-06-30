@@ -59,10 +59,10 @@ static size_t g_bytes_to_scan;
 static size_t g_lookaside_list[LOOKASIDE_SZ];
 static int g_lookaside_count = 0;
 
-int is_ref (gc_data_t *gc_data, int loc, size_t cmp)
+int is_ref (addr_buffer_t *ab, int loc, size_t cmp)
 {
     assert(loc >= 0);
-    return PTR_MASK(gc_data->addrs[loc]) == cmp;
+    return PTR_MASK(ab->addrs[loc]) == cmp;
 }
 
 /****************************************************************************/
@@ -98,45 +98,45 @@ int binary_search (size_t val, size_t *a, int min, int max)
  * Return the index to the location in the address list closest to val without
  * exceeding it.  The bounds on the return value are [0, num_addrs).
  */
-static int addr_find (size_t val, gc_data_t *gc_data)
+static int addr_find (size_t val, addr_buffer_t *ab)
 {
     // Level 1 search: Find the page the address would be on.
-    int v = binary_search(val, gc_data->minimap, 0,
-                          gc_data->n_minimap);
+    int v = binary_search(val, ab->minimap, 0,
+                          ab->n_minimap);
     // Level 2 search: Find the address within the page.
-    int loc = binary_search(val, gc_data->addrs,
+    int loc = binary_search(val, ab->addrs,
                             v * (PAGESIZE / sizeof(size_t)),
-                            v == gc_data->n_minimap - 1
-                            ? gc_data->n_addrs
+                            v == ab->n_minimap - 1
+                            ? ab->n_addrs
                             : (v + 1) * (PAGESIZE / sizeof(size_t)));
     return loc;
 }
 
-static int addr_find_hint (size_t val, gc_data_t *gc_data, int hint)
+static int addr_find_hint (size_t val, addr_buffer_t *ab, int hint)
 {
-    size_t cmp = gc_data->addrs[hint];
+    size_t cmp = ab->addrs[hint];
     if (val <= cmp) return hint;
 
     // FIXME: Should parameterize cache-line size, etc.  Not good code.
-    size_t cmp_addr = (size_t)&gc_data->addrs[hint];
+    size_t cmp_addr = (size_t)&ab->addrs[hint];
     cmp_addr &= ~(size_t)63;
     cmp_addr += 56;
     int remaining_line =
-        (cmp_addr - (size_t)&gc_data->addrs[hint]) / sizeof(size_t);
+        (cmp_addr - (size_t)&ab->addrs[hint]) / sizeof(size_t);
     remaining_line += 8;
 
     int i;
     for (i = 0; i < remaining_line; ++i) {
-        hint = MIN_OF(gc_data->n_addrs, hint + 1);
-        cmp = gc_data->addrs[hint];
+        hint = MIN_OF(ab->n_addrs, hint + 1);
+        cmp = ab->addrs[hint];
         if (val <= cmp) return hint;
     }
 
-    return addr_find(val, gc_data);
+    return addr_find(val, ab);
 }
 
 static inline int recursive_mark (size_t addr,
-                                  gc_data_t *gc_data,
+                                  addr_buffer_t *ab,
                                   trace_stats_t *ts,
                                   int depth)
 {
@@ -148,10 +148,10 @@ static inline int recursive_mark (size_t addr,
     for (i = 0; i < n_vals; ++i) {
         size_t val = PTR_MASK(ptr[i]);
         if (val < ts->min || val > ts->max) continue;
-        int loc = addr_find(val, gc_data);
-        if (is_ref(gc_data, loc, val)) {
+        int loc = addr_find(val, ab);
+        if (is_ref(ab, loc, val)) {
             // Found a hit inside our pool.
-            size_t target = gc_data->addrs[loc];
+            size_t target = ab->addrs[loc];
             if (target & 0x2) {
                 // Already recursively searched.
                 continue;
@@ -165,13 +165,13 @@ static inline int recursive_mark (size_t addr,
             if (depth < 1) {
                 // Not marked, but we can't go any deeper.  Mark it and
                 // continue.
-                BCAS(&gc_data->addrs[loc], target, target | 0x1);
+                BCAS(&ab->addrs[loc], target, target | 0x1);
                 ret = 1;
             }
 
-            if (BCAS(&gc_data->addrs[loc], target, target | 0x3)) {
+            if (BCAS(&ab->addrs[loc], target, target | 0x3)) {
                 // We will do a recursive search.
-                ret |= recursive_mark(PTR_MASK(addr), gc_data, ts, depth - 1);
+                ret |= recursive_mark(PTR_MASK(addr), ab, ts, depth - 1);
             }
         }
     }
@@ -185,25 +185,25 @@ static inline int recursive_mark (size_t addr,
  * "depth."  If there are references that are deeper than this function is
  * willing to go, return 1 to indicate a cut-off.  Return 0 otherwise.
  */
-static inline int recursive_trace (gc_data_t *gc_data,
+static inline int recursive_trace (addr_buffer_t *ab,
                                    trace_stats_t *ts,
                                    int idx, int depth)
 {
     int cutoff = 0;
 
-    size_t *ptr = (size_t*)PTR_MASK(gc_data->addrs[idx]);
+    size_t *ptr = (size_t*)PTR_MASK(ab->addrs[idx]);
     size_t n_vals = MALLOC_USABLE_SIZE(ptr) / sizeof(size_t);
     size_t i;
 
     for (i = 0; i < n_vals; ++i) {
         size_t val = PTR_MASK(ptr[i]);
         if (val < ts->min || val > ts->max) continue;
-        int loc = addr_find(val, gc_data);
-        if (is_ref(gc_data, loc, val)) {
+        int loc = addr_find(val, ab);
+        if (is_ref(ab, loc, val)) {
             // Found a reference.  That ties val to a root somewhere outside
             // the tracking region.  Mark it as not free'able if it isn't
             // already.
-            size_t addr = gc_data->addrs[loc];
+            size_t addr = ab->addrs[loc];
             if (addr & 0x2) {
                 // Already traced.
                 continue;
@@ -211,16 +211,16 @@ static inline int recursive_trace (gc_data_t *gc_data,
             if (depth <= 0) {
                 // We can't trace it, alas.  But we should mark it as seen.
                 if (!(addr & 1)) {
-                    BCAS(&gc_data->addrs[loc], addr, addr | 0x1);
+                    BCAS(&ab->addrs[loc], addr, addr | 0x1);
                 }
                 cutoff = 1;
             } else {
                 // Recursively trace it.
-                if (!BCAS(&gc_data->addrs[loc], addr, addr | 0x3)) {
+                if (!BCAS(&ab->addrs[loc], addr, addr | 0x3)) {
                     // Somebody else got to it first.  That's okay.
                     continue;
                 }
-                cutoff |= recursive_trace(gc_data, ts, loc, depth - 1);
+                cutoff |= recursive_trace(ab, ts, loc, depth - 1);
             }
         }
     }
@@ -229,7 +229,7 @@ static inline int recursive_trace (gc_data_t *gc_data,
 
 size_t g_total_sort; // FIXME: For debugging -- get rid of this.
 
-static void lookup_lookaside_list (gc_data_t *gc_data)
+static void lookup_lookaside_list (addr_buffer_t *ab)
 {
     int i;
     size_t cmp = 0;
@@ -248,23 +248,23 @@ static void lookup_lookaside_list (gc_data_t *gc_data)
     for (i = 0; i < g_lookaside_count; ++i) {
         if (cmp == g_lookaside_list[i]) continue; // Possible duplicates.
         cmp = g_lookaside_list[i];
-        int loc = addr_find_hint(cmp, gc_data, cached_loc);
+        int loc = addr_find_hint(cmp, ab, cached_loc);
         cached_loc = loc;
-        if (is_ref(gc_data, loc, cmp)) {
+        if (is_ref(ab, loc, cmp)) {
             // It's a pointer somewhere into the allocated region of memory.
-            size_t addr = gc_data->addrs[loc];
+            size_t addr = ab->addrs[loc];
             if (!(addr & 0x1)) {
                 // No need to be atomic.  Any processes racing with us are
                 // trying to write the same value.
-                gc_data->addrs[loc] = addr | 0x1;
+                ab->addrs[loc] = addr | 0x1;
             }
         }
 #ifndef NDEBUG
         else {
-            int loc2 = binary_search(cmp, gc_data->addrs,
-                                     0, gc_data->n_addrs);
+            int loc2 = binary_search(cmp, ab->addrs,
+                                     0, ab->n_addrs);
             // FIXME: Assert does not catch all bad cases.
-            assert(gc_data->addrs[loc2] != cmp);
+            assert(ab->addrs[loc2] != cmp);
         }
 #endif
     }
@@ -278,15 +278,15 @@ static void lookup_lookaside_list (gc_data_t *gc_data)
  * will later be used as a basis for determining reachability of the rest of
  * the nodes.
  */
-static void find_roots (size_t *mem, size_t range_size, gc_data_t *gc_data)
+static void find_roots (size_t *mem, size_t range_size, addr_buffer_t *ab)
 {
     size_t i;
     int guarded_idx;
     size_t guarded_addr;
     trace_stats_t ts;
 
-    ts.min = PTR_MASK(gc_data->addrs[0]);
-    ts.max = PTR_MASK(gc_data->addrs[gc_data->n_addrs - 1]);
+    ts.min = PTR_MASK(ab->addrs[0]);
+    ts.max = PTR_MASK(ab->addrs[ab->n_addrs - 1]);
 
     assert(ts.min <= ts.max);
 
@@ -294,8 +294,8 @@ static void find_roots (size_t *mem, size_t range_size, gc_data_t *gc_data)
     // to one of our addresses, but we avoid searching memory we're tracking
     // because that will be done during mark and sweep.
     i = 0;
-    guarded_idx = addr_find((size_t)mem, gc_data);
-    guarded_addr = PTR_MASK(gc_data->addrs[guarded_idx]);
+    guarded_idx = addr_find((size_t)mem, ab);
+    guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
     if (guarded_addr <= (size_t)mem) {
         size_t sz = MALLOC_USABLE_SIZE((void*)guarded_addr);
         assert(sz > 0);
@@ -304,9 +304,9 @@ static void find_roots (size_t *mem, size_t range_size, gc_data_t *gc_data)
             i += ((int)diff) / sizeof(size_t);
         }
     }
-    if (gc_data->n_addrs - 1 > guarded_idx) {
+    if (ab->n_addrs - 1 > guarded_idx) {
         ++guarded_idx;
-        guarded_addr = PTR_MASK(gc_data->addrs[guarded_idx]);
+        guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
     }
 
     for ( ; i < range_size; ++i) {
@@ -316,9 +316,9 @@ static void find_roots (size_t *mem, size_t range_size, gc_data_t *gc_data)
             size_t sz = MALLOC_USABLE_SIZE((void*)guarded_addr);
             assert(sz > 0);
             i += ((int)sz) / sizeof(size_t) - 1;
-            if (gc_data->n_addrs - 1 > guarded_idx) {
+            if (ab->n_addrs - 1 > guarded_idx) {
                 ++guarded_idx;
-                guarded_addr = PTR_MASK(gc_data->addrs[guarded_idx]);
+                guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
             }
             continue;
         }
@@ -335,7 +335,7 @@ static void find_roots (size_t *mem, size_t range_size, gc_data_t *gc_data)
         if (g_lookaside_count < LOOKASIDE_SZ) continue;
 
         // The lookaside list is full.
-        lookup_lookaside_list(gc_data);
+        lookup_lookaside_list(ab);
     }
 }
 
@@ -442,17 +442,17 @@ static int collect_ranges (void *p,
     return 1;
 }
 
-void forkgc_child (gc_data_t *gc_data, int fd)
+void forkgc_child (addr_buffer_t *ab, int fd)
 {
     // Scan memory for references.
     g_bytes_to_scan = 0;
     forkgc_proc_map_iterate(collect_ranges, NULL);
-    gc_data->completed_children = 0;
-    gc_data->cutoff_reached = 0;
+    ab->completed_children = 0;
+    ab->cutoff_reached = 0;
 
     trace_stats_t ts;
-    ts.min = PTR_MASK(gc_data->addrs[0]);
-    ts.max = PTR_MASK(gc_data->addrs[gc_data->n_addrs - 1]);
+    ts.min = PTR_MASK(ab->addrs[0]);
+    ts.max = PTR_MASK(ab->addrs[ab->n_addrs - 1]);
 
     int n_siblings = MIN_OF(MAX_CHILDREN,
                             g_bytes_to_scan / MEMORY_THRESHOLD);
@@ -461,7 +461,7 @@ void forkgc_child (gc_data_t *gc_data, int fd)
 
     fprintf(stderr, "Forking %d mark processes.\n", n_siblings);
 
-    gc_data->sibling_mode = SIBLING_MODE_MARKING;
+    ab->sibling_mode = SIBLING_MODE_MARKING;
 
     int sibling_id = 0;
     for (sibling_id = 0; sibling_id < n_siblings - 1; ++sibling_id) {
@@ -485,13 +485,13 @@ void forkgc_child (gc_data_t *gc_data, int fd)
         size_t *mem = (size_t*)g_ranges[i].low;
         find_roots(mem,
                    (g_ranges[i].high - g_ranges[i].low)
-                   / sizeof(size_t), gc_data);
+                   / sizeof(size_t), ab);
         total_memory += g_ranges[i].high - g_ranges[i].low;
     }
 
     if (g_lookaside_count > 0) {
         // Catch any remainders.
-        lookup_lookaside_list(gc_data);
+        lookup_lookaside_list(ab);
     }
 
     end = forkscan_rdtsc();
@@ -505,24 +505,24 @@ void forkgc_child (gc_data_t *gc_data, int fd)
     // Now, break up the pool into chunks for each process to handle, BFS-
     // style.
     int addrs_range_size, addrs_start, addrs_end;
-    addrs_range_size = gc_data->n_addrs / n_siblings;
+    addrs_range_size = ab->n_addrs / n_siblings;
     addrs_start = sibling_id * addrs_range_size;
     addrs_end = sibling_id == n_siblings - 1 ?
-        gc_data->n_addrs : (sibling_id + 1) * addrs_range_size;
-    while (gc_data->sibling_mode != SIBLING_MODE_DONE) {
-        int round = gc_data->round;
+        ab->n_addrs : (sibling_id + 1) * addrs_range_size;
+    while (ab->sibling_mode != SIBLING_MODE_DONE) {
+        int round = ab->round;
 
         // Run through this process's chunk looking for things to mark.
         for (i = addrs_start; i < addrs_end; ++i) {
-            size_t addr = gc_data->addrs[i];
+            size_t addr = ab->addrs[i];
             if ((addr & 0x3) == 0x1) {
                 // Node that has been marked but not recursively searched.
-                if (BCAS(&gc_data->addrs[i], addr, addr | 0x2)) {
-                    if (recursive_mark(addr, gc_data, &ts, 1)) {
+                if (BCAS(&ab->addrs[i], addr, addr | 0x2)) {
+                    if (recursive_mark(addr, ab, &ts, 1)) {
                         // Other nodes were found and marked during this round.
                         // There will need to be another round.
-                        if (0 == gc_data->more_marking_tbd) {
-                            gc_data->more_marking_tbd = 1;
+                        if (0 == ab->more_marking_tbd) {
+                            ab->more_marking_tbd = 1;
                         }
                     }
                 }
@@ -530,30 +530,30 @@ void forkgc_child (gc_data_t *gc_data, int fd)
         }
 
         if (n_siblings - 1
-            == __sync_fetch_and_add(&gc_data->completed_children, 1)) {
+            == __sync_fetch_and_add(&ab->completed_children, 1)) {
 
             // Last one done with this round.  Check to see if anything more
             // needs to be done.
 
-            if (!gc_data->more_marking_tbd) {
+            if (!ab->more_marking_tbd) {
                 // Nobody marked anything.  All done.
-                gc_data->sibling_mode = SIBLING_MODE_DONE;
+                ab->sibling_mode = SIBLING_MODE_DONE;
             } else {
-                gc_data->more_marking_tbd = 0;
+                ab->more_marking_tbd = 0;
             }
-            gc_data->completed_children = 0;
-            gc_data->round++;
+            ab->completed_children = 0;
+            ab->round++;
         } else {
-            while (round == gc_data->round) pthread_yield();
+            while (round == ab->round) pthread_yield();
         }
     }
 
     end = forkscan_rdtsc();
     fprintf(stderr, "  chunk time: %zu ms in %d rounds.\n", end - start,
-            gc_data->round);
+            ab->round);
 
     if (n_siblings - 1
-        == __sync_fetch_and_add(&gc_data->completed_children, 1)) {
+        == __sync_fetch_and_add(&ab->completed_children, 1)) {
 
         // Alert the uber parent.
         if (sizeof(size_t) != write(fd, &g_bytes_to_scan, sizeof(size_t))) {

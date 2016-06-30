@@ -59,7 +59,7 @@ static __thread int g_waiting_to_fork = 0;
 /*                                Reclaimer.                                */
 /****************************************************************************/
 
-static void generate_working_pointers_list (gc_data_t *gc_data)
+static void generate_working_pointers_list (addr_buffer_t *ab)
 {
     int n = 0;
     thread_list_t *thread_list = forkgc_proc_get_thread_list();
@@ -68,34 +68,27 @@ static void generate_working_pointers_list (gc_data_t *gc_data)
     // Add the pointers from each of the individual thread buffers.
     FOREACH_IN_THREAD_LIST(td, thread_list)
         assert(td);
-        n += forkgc_queue_pop_bulk(&gc_data->addrs[n],
+        n += forkgc_queue_pop_bulk(&ab->addrs[n],
                                    g_config.max_ptrs - n,
                                    &td->ptr_list);
     ENDFOREACH_IN_THREAD_LIST(td, thread_list);
 
-    gc_data->n_addrs = n;
+    ab->n_addrs = n;
     assert(!forkgc_queue_is_full(&forkgc_thread_get_td()->ptr_list));
 }
 
 static void become_reclaimer ()
 {
-    char *working_memory;   // Block of memory to free.
-    gc_data_t *gc_data;
+    addr_buffer_t *ab;
 
     // Get memory to store the list of pointers:
-    //   0 - 4095: Reserved page for the gc_data_t struct.
-    //   4096 -  : Address list.
-    working_memory = forkgc_alloc_mmap(g_config.working_buffer_sz);
-    gc_data = (gc_data_t*)working_memory;
-    gc_data->addrs = (size_t*)&working_memory[PAGESIZE];
-    gc_data->n_addrs = 0;
-    gc_data->capacity = g_config.max_ptrs;
+    ab = forkscan_make_reclaimer_buffer();
 
     // Copy the pointers into the list.
-    generate_working_pointers_list(gc_data);
+    generate_working_pointers_list(ab);
 
     // Give the list to the gc thread, signaling it if it's asleep.
-    forkgc_initiate_collection(gc_data);
+    forkgc_initiate_collection(ab);
     forkgc_thread_cleanup_release();
 }
 

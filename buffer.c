@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ForkGC authors
+Copyright (c) 2016 Forkscan authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20,33 +20,28 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#ifndef _FORKGC_H_
-#define _FORKGC_H_
-
+#include "alloc.h"
 #include "buffer.h"
-#include "child.h"
-#include <signal.h>
+#include "env.h"
+#include "util.h"
 
-#define SIGFORKGC SIGUSR1
+addr_buffer_t *forkscan_make_reclaimer_buffer ()
+{
+    int capacity = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
+    size_t sz = capacity * sizeof(size_t) + PAGESIZE;
+    char *raw_mem = forkgc_alloc_mmap(sz);
 
-/**
- * Acknowledge the signal sent by the GC thread and perform any work required.
- */
-void forkgc_acknowledge_signal ();
+    //   0 - 4095: Reserved page for the addr_buffer_t struct.
+    //   4096 -  : Address list.
+    addr_buffer_t *ab = (addr_buffer_t*)raw_mem;
+    ab->addrs = (size_t*)&raw_mem[PAGESIZE];
+    ab->n_addrs = 0;
+    ab->capacity = capacity;
 
-/**
- * Pass a list of pointers to the GC thread for it to collect.
- */
-void forkgc_initiate_collection (addr_buffer_t *ab);
+    return ab;
+}
 
-/**
- * Garbage-collector thread.
- */
-void *forkgc_thread (void *ignored);
+void forkscan_release_reclaimer_buffer (addr_buffer_t *ab)
+{
 
-/**
- * Print program statistics to stdout.
- */
-void forkgc_print_statistics ();
-
-#endif
+}

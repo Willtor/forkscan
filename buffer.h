@@ -28,10 +28,10 @@ typedef enum sibling_mode_t sibling_mode_t;
 enum sibling_mode_t { SIBLING_MODE_MARKING,
                       SIBLING_MODE_DONE };
 
-typedef struct gc_data_t gc_data_t;
+typedef struct addr_buffer_t addr_buffer_t;
 
-struct gc_data_t {
-    gc_data_t *next;
+struct addr_buffer_t {
+    addr_buffer_t *next;
     size_t *addrs;
     size_t *minimap;
     /////////////////////////////////////////// FIXME: unnecessary?
@@ -47,6 +47,9 @@ struct gc_data_t {
     volatile int round; // Trust we won't need more than 2 billion rounds.
 };
 
+addr_buffer_t *forkscan_make_reclaimer_buffer ();
+
+void forkscan_release_reclaimer_buffer (addr_buffer_t *db);
 
 #endif // !defined _BUFFER_H_
 

@@ -5,8 +5,19 @@ INSTALL_DIR = /usr/local
 FORKGC = libforkgc.so
 TARGETS	= $(FORKGC)
 
-FORKGC_SRC = queue.c env.c wrappers.c alloc.c util.c thread.c	\
-	proc.c forkgc.c child.c threadscan.c
+FORKGC_SRC =	\
+	queue.c	\
+	env.c	\
+	wrappers.c	\
+	alloc.c	\
+	util.c	\
+	buffer.c	\
+	thread.c	\
+	proc.c	\
+	forkgc.c	\
+	child.c	\
+	threadscan.c
+
 FORKGC_OBJ = $(FORKGC_SRC:.c=.o)
 
 # The -fno-zero-initialized-in-bss flag appears to be busted.

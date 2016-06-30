@@ -26,6 +26,6 @@ THE SOFTWARE.
 #include "buffer.h"
 #include "queue.h"
 
-void forkgc_child (gc_data_t *gc_data, int fd);
+void forkgc_child (addr_buffer_t *ab, int fd);
 
 #endif // !defined _CHILD_H_
