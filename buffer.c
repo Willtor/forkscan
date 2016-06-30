@@ -21,22 +21,45 @@ THE SOFTWARE.
 */
 
 #include "alloc.h"
+#include <assert.h>
 #include "buffer.h"
 #include "env.h"
+#include <pthread.h>
 #include "util.h"
+
+static int g_default_capacity;
+static pthread_mutex_t g_reclaimer_list_lock = PTHREAD_MUTEX_INITIALIZER;
+static addr_buffer_t *g_reclaimer_list;
 
 addr_buffer_t *forkscan_make_reclaimer_buffer ()
 {
-    int capacity = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
-    size_t sz = capacity * sizeof(size_t) + PAGESIZE;
+    addr_buffer_t *ab = g_reclaimer_list;
+
+    // See if there is already a reclaimer buffer waiting around to be
+    // reused.
+    if (NULL != ab) {
+        pthread_mutex_lock(&g_reclaimer_list_lock);
+        ab = g_reclaimer_list;
+        // Only one thread should ever be trying to take a reclaimer buffer
+        // at a time.
+        assert(ab);
+        g_reclaimer_list = ab->next;
+        pthread_mutex_unlock(&g_reclaimer_list_lock);
+        return ab;
+    }
+
+    if (0 == g_default_capacity) {
+        g_default_capacity = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
+    }
+    size_t sz = g_default_capacity * sizeof(size_t) + PAGESIZE;
     char *raw_mem = forkgc_alloc_mmap(sz);
 
     //   0 - 4095: Reserved page for the addr_buffer_t struct.
     //   4096 -  : Address list.
-    addr_buffer_t *ab = (addr_buffer_t*)raw_mem;
+    ab = (addr_buffer_t*)raw_mem;
     ab->addrs = (size_t*)&raw_mem[PAGESIZE];
     ab->n_addrs = 0;
-    ab->capacity = capacity;
+    ab->capacity = g_default_capacity;
 
     return ab;
 }
@@ -78,5 +101,12 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
 
 void forkscan_release_buffer (addr_buffer_t *ab)
 {
-    forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
+    if (ab->capacity == g_default_capacity) {
+        pthread_mutex_lock(&g_reclaimer_list_lock);
+        ab->next = g_reclaimer_list;
+        g_reclaimer_list = ab;
+        pthread_mutex_unlock(&g_reclaimer_list_lock);
+    } else {
+        forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
+    }
 }
