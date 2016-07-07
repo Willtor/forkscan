@@ -42,13 +42,26 @@ struct addr_buffer_t {
     int completed_children;
     int more_marking_tbd;
     volatile int round; // Trust we won't need more than 2 billion rounds.
+
+    // After marking has been done, these fields are used by threads that
+    // want to free the unreferenced nodes.
+    volatile int ref_count;
+    volatile int free_idx;
 };
 
 addr_buffer_t *forkscan_make_reclaimer_buffer ();
 
 addr_buffer_t *forkscan_make_aggregate_buffer (int capacity);
 
-void forkscan_release_buffer (addr_buffer_t *db);
+void forkscan_release_buffer (addr_buffer_t *ab);
+
+void forkscan_buffer_push_back (addr_buffer_t *ab);
+
+void forkscan_buffer_pop_retiree_buffer (addr_buffer_t *ab);
+
+addr_buffer_t *forkscan_buffer_get_retiree_buffer ();
+
+void forkscan_buffer_unref_buffer (addr_buffer_t *ab);
 
 #endif // !defined _BUFFER_H_
 

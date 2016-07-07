@@ -40,6 +40,8 @@ THE SOFTWARE.
 // Size of a per-thread metadata memory block.
 #define MEMBLOCK_SIZE PAGESIZE
 
+#define FREE_RANGE_SZ 1024
+
 typedef struct free_list_node_t free_list_node_t;
 
 struct free_list_node_t
@@ -70,6 +72,7 @@ thread_data_t *forkgc_util_thread_data_new ()
                       g_forkgc_ptrs_per_thread);
     td->local_block.low = td->local_block.high = 0;
     td->ref_count = 1;
+    td->retiree_buffer = NULL;
     return td;
 }
 
@@ -213,26 +216,60 @@ free_t *forkgc_util_pop_free_list ()
     return free_list;
 }
 
+
 void forkscan_util_free_ptrs (thread_data_t *td)
 {
     int i;
 
     assert(td);
-    extern int g_frees_required;
+
+    extern int g_frees_required; // FIXME: Bad, bad, bad.
     for (i = 0; i < g_frees_required; ++i) {
-        free_t *head = td->free_list;
-        if (NULL == head) {
-            td->free_list = forkgc_util_pop_free_list();
-            if (NULL == head) return;
+        addr_buffer_t *ab = td->retiree_buffer;
+        if (NULL == ab) {
+            td->retiree_buffer = forkscan_buffer_get_retiree_buffer();
+            td->begin_retiree_idx = td->end_retiree_idx = 0;
+            ab = td->retiree_buffer;
+        }
+        if (NULL == ab) return; // Nothing to free.
+
+        if (td->begin_retiree_idx == td->end_retiree_idx) {
+            // Get another range to free.
+            if (ab->free_idx >= ab->n_addrs) {
+                // This retiree buffer is done.
+                forkscan_buffer_pop_retiree_buffer(ab);
+                forkscan_buffer_unref_buffer(ab);
+                td->retiree_buffer = NULL;
+                continue;
+            }
+            int begin_idx = ab->free_idx;
+            int end_idx = MIN_OF(ab->n_addrs, begin_idx + FREE_RANGE_SZ);
+            if (BCAS(&ab->free_idx, begin_idx, end_idx)) {
+                // Success!  Got a range to free.
+                td->begin_retiree_idx = begin_idx;
+                td->end_retiree_idx = end_idx;
+            } else continue;
+        }
+
+        size_t s = ab->addrs[td->begin_retiree_idx++];
+        if (s & 0x1) {
+            // Don't free it!  It may still be alive.
             continue;
         }
-        td->free_list = head->next;
-        head->next = NULL;
-#ifndef NDEBUG
-        memset(head, 0xF0, MALLOC_USABLE_SIZE(head));
-#else
-        FREE(head);
-#endif
+        assert(0 == (s & 0x3));
+        void *ptr = (void*)s;
+        /*
+        int i;
+        int is_freed = 1;
+        for (i = 0; i < MALLOC_USABLE_SIZE(ptr); ++i) {
+            if (0xF0 != ((char*)ptr)[i]) is_freed = 0;
+        }
+        if (is_freed) {
+            abort();
+        }
+        */
+        memset(ptr, 0xF0, MALLOC_USABLE_SIZE(ptr));
+        FREE(ptr);
     }
 }
 

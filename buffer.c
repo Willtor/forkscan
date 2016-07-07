@@ -25,11 +25,14 @@ THE SOFTWARE.
 #include "buffer.h"
 #include "env.h"
 #include <pthread.h>
-#include "util.h"
 
 static int g_default_capacity;
 static pthread_mutex_t g_reclaimer_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static addr_buffer_t *g_reclaimer_list;
+
+static addr_buffer_t *g_first_retiree_buffer;
+static addr_buffer_t *g_last_retiree_buffer;
+static pthread_mutex_t g_retiree_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 addr_buffer_t *forkscan_make_reclaimer_buffer ()
 {
@@ -99,6 +102,8 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
     return ab;
 }
 
+addr_buffer_t *g_dbg_buffers;
+
 void forkscan_release_buffer (addr_buffer_t *ab)
 {
     if (ab->capacity == g_default_capacity) {
@@ -107,6 +112,90 @@ void forkscan_release_buffer (addr_buffer_t *ab)
         g_reclaimer_list = ab;
         pthread_mutex_unlock(&g_reclaimer_list_lock);
     } else {
-        forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
+        pthread_mutex_lock(&g_reclaimer_list_lock);
+        ab->next = g_dbg_buffers;
+        g_dbg_buffers = ab;
+        pthread_mutex_unlock(&g_reclaimer_list_lock);
+        //forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
     }
+}
+
+#include <stdlib.h>
+#include <stdio.h>
+
+#define PTR_MASK(v) ((v) & ~3) // Mask off the low two bits.
+void forkscan_badness (size_t succ, size_t curr)
+{
+    addr_buffer_t *ab;
+    int bcount = 0;
+    for (ab = g_dbg_buffers; ab != NULL; ab = ab->next) {
+        int n;
+        ++bcount;
+        for (n = 0; n < ab->n_addrs; ++n) {
+            if (PTR_MASK(ab->addrs[n]) == succ) {
+                fprintf(stderr, "Found in buffer %d (succ: 0x%zx, n: %d)\n",
+                        bcount, ab->addrs[n], n);
+            }
+            if (PTR_MASK(ab->addrs[n]) == curr) {
+                fprintf(stderr, "  (found curr in buffer %d, n: %d)\n",
+                        bcount, n);
+            }
+        }
+    }
+    abort();
+}
+
+void forkscan_buffer_push_back (addr_buffer_t *ab)
+{
+    ab->ref_count = 1;
+    ab->free_idx = 0;
+    ab->next = NULL;
+
+    pthread_mutex_lock(&g_retiree_mutex);
+    if (NULL == g_last_retiree_buffer) {
+        g_last_retiree_buffer = g_first_retiree_buffer = ab;
+    } else {
+        g_last_retiree_buffer->next = ab;
+        g_last_retiree_buffer = ab;
+    }
+    pthread_mutex_unlock(&g_retiree_mutex);
+}
+
+void forkscan_buffer_pop_retiree_buffer (addr_buffer_t *ab)
+{
+    if (g_first_retiree_buffer != ab) return;
+    pthread_mutex_lock(&g_retiree_mutex);
+    if (g_first_retiree_buffer == ab) {
+        if (g_last_retiree_buffer == ab) {
+            g_last_retiree_buffer = NULL;
+            g_first_retiree_buffer = NULL;
+        } else {
+            g_first_retiree_buffer = ab->next;
+        }
+    }
+    pthread_mutex_unlock(&g_retiree_mutex);
+}
+
+addr_buffer_t *forkscan_buffer_get_retiree_buffer ()
+{
+    addr_buffer_t *ret = NULL;
+    if (NULL == g_first_retiree_buffer) return NULL;
+    pthread_mutex_lock(&g_retiree_mutex);
+    if (NULL != g_first_retiree_buffer) {
+        ret = g_first_retiree_buffer;
+        ++ret->ref_count;
+    }
+    pthread_mutex_unlock(&g_retiree_mutex);
+    return ret;
+}
+
+void forkscan_buffer_unref_buffer (addr_buffer_t *ab)
+{
+    pthread_mutex_lock(&g_retiree_mutex);
+    if (0 == --ab->ref_count) {
+        if (ab->free_idx >= ab->n_addrs) {
+            forkscan_release_buffer(ab);
+        }
+    }
+    pthread_mutex_unlock(&g_retiree_mutex);
 }

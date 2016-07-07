@@ -23,6 +23,7 @@ THE SOFTWARE.
 #ifndef _UTIL_H_
 #define _UTIL_H_
 
+#include "buffer.h"
 #include <pthread.h>
 #include "queue.h"
 #include <signal.h>
@@ -109,7 +110,10 @@ struct thread_data_t {
     int is_active;            // The thread is running user code.
 
     queue_t ptr_list;         // Local list of pointers to be collected.
-    free_t *free_list;
+
+    addr_buffer_t *retiree_buffer;
+    int begin_retiree_idx;
+    int end_retiree_idx;
 
     size_t local_timestamp;
     int times_without_update;

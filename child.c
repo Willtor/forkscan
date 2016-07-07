@@ -39,7 +39,7 @@ THE SOFTWARE.
 /****************************************************************************/
 
 #define MAX_MARK_AND_SWEEP_RANGES 4096
-#define LOOKASIDE_SZ 0x2000
+#define LOOKASIDE_SZ 0x4000
 #define MAX_TRACE_DEPTH 32
 #define BINARY_THRESHOLD 32
 #define MAX_RANGE_SIZE (4 * 1024 * 1024)
@@ -167,6 +167,7 @@ static inline int recursive_mark (size_t addr,
                 // continue.
                 BCAS(&ab->addrs[loc], target, target | 0x1);
                 ret = 1;
+                continue;
             }
 
             if (BCAS(&ab->addrs[loc], target, target | 0x3)) {
@@ -227,7 +228,10 @@ static inline int recursive_trace (addr_buffer_t *ab,
     return cutoff;
 }
 
-size_t g_total_sort; // FIXME: For debugging -- get rid of this.
+#ifdef TIMING
+size_t g_total_sort;
+size_t g_total_lookaside;
+#endif
 
 static void lookup_lookaside_list (addr_buffer_t *ab)
 {
@@ -235,18 +239,28 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
     size_t cmp = 0;
     int savings;
 
+#ifdef TIMING
     size_t start_sort, end_sort;
+    size_t start_lookaside, end_lookaside;
     start_sort = forkscan_rdtsc();
+#endif
     forkgc_util_sort(g_lookaside_list, g_lookaside_count);
+#ifdef TIMING
     end_sort = forkscan_rdtsc();
     g_total_sort += end_sort - start_sort;
+
+    start_lookaside = end_sort;
+#endif
 
     savings = forkgc_util_compact(g_lookaside_list, g_lookaside_count);
     g_lookaside_count -= savings;
 
     int cached_loc = 0;
     for (i = 0; i < g_lookaside_count; ++i) {
-        if (cmp == g_lookaside_list[i]) continue; // Possible duplicates.
+        if (cmp == g_lookaside_list[i]) {
+            abort(); // No possible duplicates after compaction?!
+            continue; // Possible duplicates.
+        }
         cmp = g_lookaside_list[i];
         int loc = addr_find_hint(cmp, ab, cached_loc);
         cached_loc = loc;
@@ -269,6 +283,11 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
 #endif
     }
 
+#ifdef TIMING
+    end_lookaside = forkscan_rdtsc();
+    g_total_lookaside += end_lookaside - start_lookaside;
+#endif
+
     g_lookaside_count = 0;
 }
 
@@ -278,7 +297,7 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
  * will later be used as a basis for determining reachability of the rest of
  * the nodes.
  */
-static void find_roots (size_t *mem, size_t range_size, addr_buffer_t *ab)
+static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
 {
     size_t i;
     int guarded_idx;
@@ -292,16 +311,17 @@ static void find_roots (size_t *mem, size_t range_size, addr_buffer_t *ab)
 
     // Figure out where to start the search.  Any memory is a potential ptr
     // to one of our addresses, but we avoid searching memory we're tracking
-    // because that will be done during mark and sweep.
+    // because that will be done during mark.  The "guarded_addr" indicates
+    // the next location in memory we want to _avoid_ scanning.
     i = 0;
-    guarded_idx = addr_find((size_t)mem, ab);
+    guarded_idx = addr_find(low, ab);
     guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
-    if (guarded_addr <= (size_t)mem) {
+    if (guarded_addr <= low) {
         size_t sz = MALLOC_USABLE_SIZE((void*)guarded_addr);
         assert(sz > 0);
-        if ((size_t)mem < guarded_addr + sz) {
-            size_t diff = guarded_addr + sz - PTR_MASK((size_t)mem);
-            i += ((int)diff) / sizeof(size_t);
+        if (low < guarded_addr + sz) {
+            size_t diff = guarded_addr + sz - PTR_MASK(low);
+            i += ((int)diff) / sizeof(size_t); // FIXME: off-by-one?
         }
     }
     if (ab->n_addrs - 1 > guarded_idx) {
@@ -309,33 +329,35 @@ static void find_roots (size_t *mem, size_t range_size, addr_buffer_t *ab)
         guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
     }
 
-    for ( ; i < range_size; ++i) {
-        if (guarded_addr == (size_t)(&mem[i])) {
-            // Skip a little.  This area will be searched during the marking
-            // phase.
-            size_t sz = MALLOC_USABLE_SIZE((void*)guarded_addr);
-            assert(sz > 0);
-            i += ((int)sz) / sizeof(size_t) - 1;
+    while (low < high) {
+        size_t next_stopping_point = MIN_OF(guarded_addr, high);
+        for ( ; low < next_stopping_point; low += sizeof(size_t)) {
+            size_t *mem = (size_t*)low;
+            size_t cmp = PTR_MASK(*mem);
+            // PTR_MASK catches pointers that have been hidden through
+            // overloading the two low-order bits.
+
+            if (cmp < ts.min || cmp > ts.max) continue; // Out-of-range.
+
+            // Put the address aside for future lookup.  By aggregating, we
+            // can reduce the number of cache misses.
+            g_lookaside_list[g_lookaside_count++] = cmp;
+            if (g_lookaside_count < LOOKASIDE_SZ) continue;
+
+            // The lookaside list is full.
+            lookup_lookaside_list(ab);
+        }
+
+        assert(low == next_stopping_point);
+        if (next_stopping_point == guarded_addr) {
+            low += MALLOC_USABLE_SIZE((void*)guarded_addr);
             if (ab->n_addrs - 1 > guarded_idx) {
                 ++guarded_idx;
                 guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
+            } else {
+                guarded_addr = (size_t)-1;
             }
-            continue;
         }
-
-        size_t cmp = PTR_MASK(mem[i]);
-        // PTR_MASK catches pointers that have been hidden through overloading
-        // the two low-order bits.
-
-        if (cmp < ts.min || cmp > ts.max) continue; // Out-of-range.
-
-        // Put the address aside for future lookup.  By aggregating, we can
-        // reduce the number of cache misses.
-        g_lookaside_list[g_lookaside_count++] = cmp;
-        if (g_lookaside_count < LOOKASIDE_SZ) continue;
-
-        // The lookaside list is full.
-        lookup_lookaside_list(ab);
     }
 }
 
@@ -459,7 +481,7 @@ void forkgc_child (addr_buffer_t *ab, int fd)
     n_siblings = MIN_OF(n_siblings, g_n_ranges);
     n_siblings = MAX_OF(n_siblings, 1);
 
-    fprintf(stderr, "Forking %d mark processes.\n", n_siblings);
+    //fprintf(stderr, "Forking %d mark processes.\n", n_siblings);
 
     ab->sibling_mode = SIBLING_MODE_MARKING;
 
@@ -468,9 +490,10 @@ void forkgc_child (addr_buffer_t *ab, int fd)
         if (fork() == 0) break;
     }
 
+#ifdef TIMING
     size_t start, end;
-
     start = forkscan_rdtsc();
+#endif
 
     // Scan this child's ranges of memory, looking for roots into our pool.
     int i;
@@ -482,10 +505,7 @@ void forkgc_child (addr_buffer_t *ab, int fd)
         // up the work evenly, or some will sit around waiting while there's
         // work to be done.
 
-        size_t *mem = (size_t*)g_ranges[i].low;
-        find_roots(mem,
-                   (g_ranges[i].high - g_ranges[i].low)
-                   / sizeof(size_t), ab);
+        find_roots(g_ranges[i].low, g_ranges[i].high, ab);
         total_memory += g_ranges[i].high - g_ranges[i].low;
     }
 
@@ -494,13 +514,15 @@ void forkgc_child (addr_buffer_t *ab, int fd)
         lookup_lookaside_list(ab);
     }
 
+#ifdef TIMING
     end = forkscan_rdtsc();
-    fprintf(stderr, "find_roots took %zu ms.  (mem: 0x%zx, sort: %zu)\n",
+    fprintf(stderr, "find_roots took %zu ms.  (mem: 0x%zx, sort: %zu, la: %zu)\n",
             end - start,
             total_memory,
-            g_total_sort);
-
+            g_total_sort,
+            g_total_lookaside);
     start = end;
+#endif
 
     // Now, break up the pool into chunks for each process to handle, BFS-
     // style.
@@ -548,9 +570,11 @@ void forkgc_child (addr_buffer_t *ab, int fd)
         }
     }
 
+#ifdef TIMING
     end = forkscan_rdtsc();
     fprintf(stderr, "  chunk time: %zu ms in %d rounds.\n", end - start,
             ab->round);
+#endif
 
     if (n_siblings - 1
         == __sync_fetch_and_add(&ab->completed_children, 1)) {

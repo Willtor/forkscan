@@ -145,69 +145,6 @@ static void address_range (sweeper_work_t *work)
     }
 }
 
-static int find_unreferenced_nodes (addr_buffer_t *ab)
-{
-    unref_config_t unref_config;
-    int sig_count;
-    int addrs_per_thread;
-    int i;
-    size_t start, end;
-
-    unref_config.ab = ab;
-    unref_config.min_val = ab->addrs[0];
-    unref_config.max_val = ab->addrs[ab->n_addrs - 1];
-
-    g_signal_mode = MODE_SWEEP;
-    g_received_signal = 0;
-    start = forkscan_rdtsc();
-    sig_count = forkgc_proc_signal(SIGFORKGC);
-    if (sig_count == 0) return 0; // Program is about to exit.
-    addrs_per_thread = ab->n_addrs / sig_count;
-
-    // Set up work for the threads.
-    for (i = 0; i < sig_count; ++i) {
-        g_sweeper_work[i].unref_config = &unref_config;
-        g_sweeper_work[i].range_begin = i * addrs_per_thread;
-        g_sweeper_work[i].range_end = (i + 1) * addrs_per_thread;
-    }
-    g_sweeper_work[sig_count - 1].range_end = ab->n_addrs;
-    g_sweepers_working = 0;
-    g_sweepers_remaining = sig_count;
-
-    while (g_received_signal < sig_count) pthread_yield();
-    ++g_sweep_counter;
-
-    // Wait for sweepers to complete.
-    pthread_mutex_lock(&g_gc_mutex);
-    if (g_gc_waiting == GC_DONT_WAIT_FOR_SWEEPERS) {
-        // Wow!  Those sweepers finished before we even got here!  Nothing to
-        // wait for.
-    } else {
-        g_gc_waiting = GC_WAITING_FOR_SWEEPERS;
-        pthread_cond_wait(&g_gc_cond, &g_gc_mutex);
-    }
-    g_gc_waiting = GC_NOT_WAITING;
-    pthread_mutex_unlock(&g_gc_mutex);
-    end = forkscan_rdtsc();
-
-    // Save time.
-    size_t total_time = end > start ? end - start : 0;
-    g_total_sweep_time += total_time;
-
-    // Compact the list.
-    int write_position = 0;
-    for (i = 0; i < ab->n_addrs; ++i) {
-        if (0 != (ab->addrs[i] & 1)) {
-            // Address has its low bit set: still alive.
-            ab->addrs[write_position] = PTR_MASK(ab->addrs[i]);
-            ++write_position;
-        }
-    }
-    ab->n_addrs = write_position;
-
-    return 0;
-}
-
 static void generate_minimap (addr_buffer_t *ab)
 {
     size_t i;
@@ -253,13 +190,6 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *data_list)
     forkgc_util_sort(ret->addrs, ret->n_addrs);
     assert_monotonicity(ret->addrs, ret->n_addrs);
     generate_minimap(ret);
-
-#ifndef NDEBUG
-    int i;
-    for (i = 0; i < ret->n_addrs; ++i) {
-        assert(ret->refs[i] == 0);
-    }
-#endif
 
     return ret;
 }
@@ -320,23 +250,27 @@ static void garbage_collect (addr_buffer_t *ab)
     }
     if (bytes_scanned > g_scan_max) g_scan_max = bytes_scanned;
 
-    // Identify unreferenced memory and free it.
-    find_unreferenced_nodes(working_data);
+    // Make the unreferenced nodes, here, available for free'ing.
+    forkscan_buffer_push_back(working_data);
 
+    // Pull out all the externally-referenced addresses so they can be
+    // included in the next collection round.
     ab->n_addrs = 0;
     int i;
     for (i = 0; i < working_data->n_addrs; ++i) {
         if (g_uncollected_data == NULL) g_uncollected_data = ab;
+        if ((working_data->addrs[i] & 0x1) == 0) continue;
+        ab->addrs[ab->n_addrs++] = working_data->addrs[i];
         if (ab->n_addrs >= ab->capacity) {
             ab = ab->next;
             assert(ab != NULL);
             ab->n_addrs = 0;
         }
-        ab->addrs[ab->n_addrs++] = working_data->addrs[i];
     }
 
+    forkscan_buffer_unref_buffer(working_data);
+
     close(pipefd[PIPE_READ]);
-    forkscan_release_buffer(working_data);
 
     // Free up unnecessary space.
     assert(ab);
@@ -372,6 +306,7 @@ void forkgc_acknowledge_signal ()
         __sync_fetch_and_add(&g_received_signal, 1);
         while (old_counter == g_cleanup_counter) pthread_yield();
     } else {
+        // FIXME: No longer sweeping.
         assert(g_signal_mode == MODE_SWEEP);
         size_t old_counter = g_sweep_counter;
         __sync_fetch_and_add(&g_received_signal, 1);

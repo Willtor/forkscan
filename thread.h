@@ -23,8 +23,6 @@ THE SOFTWARE.
 #ifndef _THREAD_H_
 #define _THREAD_H_
 
-#include "util.h"
-
 /**
  * Return the local metadata for this thread.
  */
