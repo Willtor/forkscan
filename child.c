@@ -44,7 +44,7 @@ THE SOFTWARE.
 #define BINARY_THRESHOLD 32
 #define MAX_RANGE_SIZE (4 * 1024 * 1024)
 #define MAX_CHILDREN 16
-#define MEMORY_THRESHOLD (1024 * 1024 * 128)
+#define MEMORY_THRESHOLD (1024 * 1024 * 16)
 
 typedef struct trace_stats_t trace_stats_t;
 
@@ -58,6 +58,11 @@ static int g_n_ranges;
 static size_t g_bytes_to_scan;
 static size_t g_lookaside_list[LOOKASIDE_SZ];
 static int g_lookaside_count = 0;
+
+#ifdef TIMING
+static size_t g_total_sort;
+static size_t g_total_lookaside;
+#endif
 
 int is_ref (addr_buffer_t *ab, int loc, size_t cmp)
 {
@@ -228,11 +233,6 @@ static inline int recursive_trace (addr_buffer_t *ab,
     return cutoff;
 }
 
-#ifdef TIMING
-size_t g_total_sort;
-size_t g_total_lookaside;
-#endif
-
 static void lookup_lookaside_list (addr_buffer_t *ab)
 {
     int i;
@@ -332,8 +332,7 @@ static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
     while (low < high) {
         size_t next_stopping_point = MIN_OF(guarded_addr, high);
         for ( ; low < next_stopping_point; low += sizeof(size_t)) {
-            size_t *mem = (size_t*)low;
-            size_t cmp = PTR_MASK(*mem);
+            size_t cmp = PTR_MASK(*(size_t*)low);
             // PTR_MASK catches pointers that have been hidden through
             // overloading the two low-order bits.
 
