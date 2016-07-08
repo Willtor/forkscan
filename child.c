@@ -63,7 +63,7 @@ static size_t g_total_sort;
 static size_t g_total_lookaside;
 #endif
 
-int is_ref (addr_buffer_t *ab, int loc, size_t cmp)
+static int is_ref (addr_buffer_t *ab, int loc, size_t cmp)
 {
     assert(loc >= 0);
     return PTR_MASK(ab->addrs[loc]) == cmp;
@@ -84,7 +84,7 @@ static int iterative_search (size_t val, size_t *a, int min, int max)
     return min - 1;
 }
 
-int binary_search (size_t val, size_t *a, int min, int max)
+static int binary_search (size_t val, size_t *a, int min, int max)
 {
     while (max - min >= BINARY_THRESHOLD) {
         int mid = (max + min) / 2;
