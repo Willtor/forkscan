@@ -346,10 +346,10 @@ void forkgc_initiate_collection (addr_buffer_t *ab)
     }
     pthread_mutex_unlock(&g_gc_mutex);
 
-    while (g_waiting_collects > g_forkscan_throttling_queue) {
+    while (g_waiting_collects >= g_forkscan_throttling_queue) {
         //pthread_yield(); // FIXME: Yield?
         pthread_mutex_lock(&g_client_waiting_lock);
-        if (g_waiting_collects > g_forkscan_throttling_queue) {
+        if (g_waiting_collects >= g_forkscan_throttling_queue) {
             pthread_cond_wait(&g_client_waiting_cond, &g_client_waiting_lock);
         }
         pthread_mutex_unlock(&g_client_waiting_lock);
@@ -376,7 +376,7 @@ void *forkgc_thread (void *ignored)
         assert(g_addr_buffer);
         ab = g_addr_buffer;
         g_addr_buffer = NULL;
-        if (g_waiting_collects > g_forkscan_throttling_queue) {
+        if (g_waiting_collects >= g_forkscan_throttling_queue) {
             g_waiting_collects = 0;
             pthread_mutex_lock(&g_client_waiting_lock);
             pthread_cond_broadcast(&g_client_waiting_cond);
