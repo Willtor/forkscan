@@ -258,17 +258,9 @@ void forkscan_util_free_ptrs (thread_data_t *td)
         }
         assert(0 == (s & 0x3));
         void *ptr = (void*)s;
-        /*
-        int i;
-        int is_freed = 1;
-        for (i = 0; i < MALLOC_USABLE_SIZE(ptr); ++i) {
-            if (0xF0 != ((char*)ptr)[i]) is_freed = 0;
-        }
-        if (is_freed) {
-            abort();
-        }
-        */
-        memset(ptr, 0xF0, MALLOC_USABLE_SIZE(ptr));
+        // FIXME: What about this memset?  Does it save time
+        // to have it on or off?
+        memset(ptr, 0x0, MALLOC_USABLE_SIZE(ptr));
         FREE(ptr);
     }
 }
