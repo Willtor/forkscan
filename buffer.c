@@ -102,8 +102,6 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
     return ab;
 }
 
-addr_buffer_t *g_dbg_buffers;
-
 void forkscan_release_buffer (addr_buffer_t *ab)
 {
     if (ab->capacity == g_default_capacity) {
@@ -112,37 +110,8 @@ void forkscan_release_buffer (addr_buffer_t *ab)
         g_reclaimer_list = ab;
         pthread_mutex_unlock(&g_reclaimer_list_lock);
     } else {
-        pthread_mutex_lock(&g_reclaimer_list_lock);
-        ab->next = g_dbg_buffers;
-        g_dbg_buffers = ab;
-        pthread_mutex_unlock(&g_reclaimer_list_lock);
-        //forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
+        forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
     }
-}
-
-#include <stdlib.h>
-#include <stdio.h>
-
-#define PTR_MASK(v) ((v) & ~3) // Mask off the low two bits.
-void forkscan_badness (size_t succ, size_t curr)
-{
-    addr_buffer_t *ab;
-    int bcount = 0;
-    for (ab = g_dbg_buffers; ab != NULL; ab = ab->next) {
-        int n;
-        ++bcount;
-        for (n = 0; n < ab->n_addrs; ++n) {
-            if (PTR_MASK(ab->addrs[n]) == succ) {
-                fprintf(stderr, "Found in buffer %d (succ: 0x%zx, n: %d)\n",
-                        bcount, ab->addrs[n], n);
-            }
-            if (PTR_MASK(ab->addrs[n]) == curr) {
-                fprintf(stderr, "  (found curr in buffer %d, n: %d)\n",
-                        bcount, n);
-            }
-        }
-    }
-    abort();
 }
 
 void forkscan_buffer_push_back (addr_buffer_t *ab)
