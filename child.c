@@ -184,54 +184,6 @@ static inline int recursive_mark (size_t addr,
     return ret;
 }
 
-/**
- * Search a node for references to other nodes in our address list.  If any
- * exist, search those nodes for references, recursively, up to a maximum
- * "depth."  If there are references that are deeper than this function is
- * willing to go, return 1 to indicate a cut-off.  Return 0 otherwise.
- */
-static inline int recursive_trace (addr_buffer_t *ab,
-                                   trace_stats_t *ts,
-                                   int idx, int depth)
-{
-    int cutoff = 0;
-
-    size_t *ptr = (size_t*)PTR_MASK(ab->addrs[idx]);
-    size_t n_vals = MALLOC_USABLE_SIZE(ptr) / sizeof(size_t);
-    size_t i;
-
-    for (i = 0; i < n_vals; ++i) {
-        size_t val = PTR_MASK(ptr[i]);
-        if (val < ts->min || val > ts->max) continue;
-        int loc = addr_find(val, ab);
-        if (is_ref(ab, loc, val)) {
-            // Found a reference.  That ties val to a root somewhere outside
-            // the tracking region.  Mark it as not free'able if it isn't
-            // already.
-            size_t addr = ab->addrs[loc];
-            if (addr & 0x2) {
-                // Already traced.
-                continue;
-            }
-            if (depth <= 0) {
-                // We can't trace it, alas.  But we should mark it as seen.
-                if (!(addr & 1)) {
-                    BCAS(&ab->addrs[loc], addr, addr | 0x1);
-                }
-                cutoff = 1;
-            } else {
-                // Recursively trace it.
-                if (!BCAS(&ab->addrs[loc], addr, addr | 0x3)) {
-                    // Somebody else got to it first.  That's okay.
-                    continue;
-                }
-                cutoff |= recursive_trace(ab, ts, loc, depth - 1);
-            }
-        }
-    }
-    return cutoff;
-}
-
 static void lookup_lookaside_list (addr_buffer_t *ab)
 {
     int i;
