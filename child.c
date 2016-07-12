@@ -38,10 +38,10 @@ THE SOFTWARE.
 /*                                  Macros                                  */
 /****************************************************************************/
 
-#define MAX_MARK_AND_SWEEP_RANGES 4096
+#define MAX_MARK_AND_SWEEP_RANGES 0x10000
 #define LOOKASIDE_SZ 0x4000
 #define BINARY_THRESHOLD 32
-#define MAX_RANGE_SIZE (4 * 1024 * 1024)
+#define MAX_RANGE_SIZE (8 * 1024 * 1024)
 #define MAX_CHILDREN 16
 #define MEMORY_THRESHOLD (1024 * 1024 * 16)
 
@@ -275,13 +275,17 @@ static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
             i += ((int)diff) / sizeof(size_t); // FIXME: off-by-one?
         }
     }
-    if (ab->n_addrs - 1 > guarded_idx) {
-        ++guarded_idx;
+    ++guarded_idx;
+    if (ab->n_addrs > guarded_idx) {
         guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
+    } else {
+        guarded_addr = (size_t)-1;
     }
 
     while (low < high) {
         size_t next_stopping_point = MIN_OF(guarded_addr, high);
+        assert((next_stopping_point & 0x3) == 0);
+        assert(next_stopping_point >= low);
         for ( ; low < next_stopping_point; low += sizeof(size_t)) {
             size_t cmp = PTR_MASK(*(size_t*)low);
             // PTR_MASK catches pointers that have been hidden through
@@ -301,12 +305,14 @@ static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
         assert(low == next_stopping_point);
         if (next_stopping_point == guarded_addr) {
             low += MALLOC_USABLE_SIZE((void*)guarded_addr);
-            if (ab->n_addrs - 1 > guarded_idx) {
-                ++guarded_idx;
+            ++guarded_idx;
+            if (ab->n_addrs > guarded_idx) {
                 guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
+                assert(guarded_addr > ab->addrs[guarded_idx -1]);
             } else {
                 guarded_addr = (size_t)-1;
             }
+            assert(guarded_addr >= low);
         }
     }
 }

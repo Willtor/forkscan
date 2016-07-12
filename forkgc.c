@@ -171,20 +171,29 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *data_list)
         n_addrs += tmp->n_addrs;
         ++list_count;
     } while ((tmp = tmp->next));
+    // FIXME: This g_frees_required calculation no longer works as planned.
     g_frees_required = MAX_OF(list_count * 8, 8);
 
     assert(n_addrs != 0);
 
-    ret = forkscan_make_aggregate_buffer(n_addrs);
-    ret->n_addrs = n_addrs;
+    if (n_addrs > data_list->capacity || !data_list->is_aggregate) {
+        ret = forkscan_make_aggregate_buffer(n_addrs > data_list->capacity ?
+                                             n_addrs : data_list->capacity);
+    } else {
+        ret = data_list;
+        data_list = data_list->next;
+        ret->next = NULL;
+    }
 
-    // Copy the addresses over.
-    char *dest = (char*)ret->addrs;
-    tmp = data_list;
-    do {
-        memcpy(dest, tmp->addrs, tmp->n_addrs * sizeof(size_t));
-        dest += tmp->n_addrs * sizeof(size_t);
-    } while ((tmp = tmp->next));
+    // Copy the addresses into the aggregate buffer.
+    while (data_list) {
+        memcpy(&ret->addrs[ret->n_addrs],
+               data_list->addrs,
+               data_list->n_addrs * sizeof(size_t));
+        ret->n_addrs += data_list->n_addrs;
+        data_list = data_list->next;
+    }
+    assert(ret->n_addrs == n_addrs);
 
     // Sort the addresses and generate the minimap for the scanner.
     forkgc_util_sort(ret->addrs, ret->n_addrs);
@@ -202,12 +211,17 @@ static void garbage_collect (addr_buffer_t *ab)
 
     // Include the addrs from the last collection iteration.
     if (g_uncollected_data) {
-        addr_buffer_t *tmp = g_uncollected_data;
-        while (tmp->next) tmp = tmp->next;
-        tmp->next = ab;
+        g_uncollected_data->next = ab;
         ab = g_uncollected_data;
         g_uncollected_data = NULL;
     }
+
+#ifndef NDEBUG
+    if (ab) {
+        int i;
+        for (i = 0; i < ab->n_addrs; ++i) assert(ab->addrs[i] != 0);
+    }
+#endif
 
     working_data = aggregate_addrs(ab);
 
@@ -249,42 +263,38 @@ static void garbage_collect (addr_buffer_t *ab)
         forkgc_fatal("Failed to read from child.\n");
     }
     if (bytes_scanned > g_scan_max) g_scan_max = bytes_scanned;
+    close(pipefd[PIPE_READ]);
 
     // Make the unreferenced nodes, here, available for free'ing.
     forkscan_buffer_push_back(working_data);
 
     // Pull out all the externally-referenced addresses so they can be
     // included in the next collection round.
+    assert(g_uncollected_data == NULL);
+    g_uncollected_data =
+        forkscan_make_aggregate_buffer(working_data->capacity);
     ab->n_addrs = 0;
     int i;
     for (i = 0; i < working_data->n_addrs; ++i) {
-        if (g_uncollected_data == NULL) g_uncollected_data = ab;
         if ((working_data->addrs[i] & 0x1) == 0) continue;
-        ab->addrs[ab->n_addrs++] = working_data->addrs[i];
-        if (ab->n_addrs >= ab->capacity) {
-            ab = ab->next;
-            assert(ab != NULL);
-            ab->n_addrs = 0;
-        }
+        g_uncollected_data->addrs[g_uncollected_data->n_addrs++] =
+            PTR_MASK(working_data->addrs[i]);
     }
-
-    forkscan_buffer_unref_buffer(working_data);
-
-    close(pipefd[PIPE_READ]);
 
     // Free up unnecessary space.
     assert(ab);
-    addr_buffer_t *tmp;
-    if (ab->n_addrs) {
-        tmp = ab;
-        ab = ab->next;
-        tmp->next = NULL;
-    } else assert(NULL == g_uncollected_data);
+    addr_buffer_t *tmp = ab->next;
     while (ab) {
-        tmp = ab->next;
-        forkscan_release_buffer(ab);
+        if (ab->ref_count == 0) {
+            forkscan_release_buffer(ab);
+        } else {
+            ab->next = NULL;
+        }
         ab = tmp;
+        if (ab) tmp = ab->next;
     }
+
+    forkscan_buffer_unref_buffer(working_data);
 }
 
 /****************************************************************************/

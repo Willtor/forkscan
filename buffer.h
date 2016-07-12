@@ -34,6 +34,7 @@ struct addr_buffer_t {
     addr_buffer_t *next;
     size_t *addrs;
     size_t *minimap;
+    int is_aggregate; // Has minimap space.
     int n_addrs;
     int n_minimap;
     int capacity;

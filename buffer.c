@@ -63,6 +63,8 @@ addr_buffer_t *forkscan_make_reclaimer_buffer ()
     ab->addrs = (size_t*)&raw_mem[PAGESIZE];
     ab->n_addrs = 0;
     ab->capacity = g_default_capacity;
+    ab->is_aggregate = 0;
+    ab->ref_count = 0;
 
     return ab;
 }
@@ -98,10 +100,13 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
     offset += pages_of_minimap * PAGESIZE;
 
     ab->capacity = capacity;
+    ab->is_aggregate = 1;
+    ab->ref_count = 0;
 
     return ab;
 }
 
+#include <stdio.h>
 void forkscan_release_buffer (addr_buffer_t *ab)
 {
     if (ab->capacity == g_default_capacity) {
