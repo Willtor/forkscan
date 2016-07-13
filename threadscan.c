@@ -195,7 +195,14 @@ void forkgc_retire (void *ptr)
 __attribute__((visibility("default")))
 void forkgc_free (void *ptr)
 {
+    g_in_malloc = 1;
     FREE(ptr);
+    g_in_malloc = 0;
+
+    if (g_waiting_to_fork) {
+        forkgc_acknowledge_signal();
+        g_waiting_to_fork = 0;
+    }
 }
 
 /**

@@ -145,6 +145,9 @@ void forkscan_buffer_pop_retiree_buffer (addr_buffer_t *ab)
             g_first_retiree_buffer = NULL;
         } else {
             g_first_retiree_buffer = ab->next;
+            if (NULL == g_first_retiree_buffer) {
+                g_last_retiree_buffer = NULL;
+            }
         }
     }
     pthread_mutex_unlock(&g_retiree_mutex);
