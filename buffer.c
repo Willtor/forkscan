@@ -129,6 +129,8 @@ void forkscan_buffer_push_back (addr_buffer_t *ab)
     if (NULL == g_last_retiree_buffer) {
         g_last_retiree_buffer = g_first_retiree_buffer = ab;
     } else {
+        // FIXME: What if when the buff was removed from the list, it wasn't
+        // at the front?
         g_last_retiree_buffer->next = ab;
         g_last_retiree_buffer = ab;
     }
@@ -137,17 +139,20 @@ void forkscan_buffer_push_back (addr_buffer_t *ab)
 
 void forkscan_buffer_pop_retiree_buffer (addr_buffer_t *ab)
 {
-    if (g_first_retiree_buffer != ab) return;
+    addr_buffer_t *curr, *prev = NULL;
     pthread_mutex_lock(&g_retiree_mutex);
-    if (g_first_retiree_buffer == ab) {
-        if (g_last_retiree_buffer == ab) {
+    curr = g_first_retiree_buffer;
+    while (curr != NULL && ab != curr) {
+        prev = curr;
+        curr = curr->next;
+    }
+    if (curr == ab) {
+        // ab was still in the list of retiree buffers.  Splice it out.
+        if (prev) prev->next = curr->next;
+        else g_first_retiree_buffer = curr->next;
+
+        if (g_first_retiree_buffer == NULL) {
             g_last_retiree_buffer = NULL;
-            g_first_retiree_buffer = NULL;
-        } else {
-            g_first_retiree_buffer = ab->next;
-            if (NULL == g_first_retiree_buffer) {
-                g_last_retiree_buffer = NULL;
-            }
         }
     }
     pthread_mutex_unlock(&g_retiree_mutex);
