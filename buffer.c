@@ -93,6 +93,7 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
         if (ab) {
             g_available_aggregates = ab->next;
             pthread_mutex_unlock(&g_aa_mutex);
+            ab->n_addrs = 0;
             assert(ab->ref_count == 0);
             return ab;
         }
