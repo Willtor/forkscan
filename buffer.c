@@ -34,6 +34,9 @@ static addr_buffer_t *g_first_retiree_buffer;
 static addr_buffer_t *g_last_retiree_buffer;
 static pthread_mutex_t g_retiree_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+static addr_buffer_t *g_available_aggregates;
+static pthread_mutex_t g_aa_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 addr_buffer_t *forkscan_make_reclaimer_buffer ()
 {
     addr_buffer_t *ab = g_reclaimer_list;
@@ -73,6 +76,29 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
 {
     addr_buffer_t *ab;
 
+    // Round capacity up to the nearest page size.
+    if (capacity & (PAGESIZE / sizeof(size_t) - 1)) {
+        capacity -= capacity & (PAGESIZE / sizeof(size_t) - 1);
+        capacity += PAGESIZE / sizeof(size_t);
+    }
+
+    if (g_available_aggregates != NULL) {
+        pthread_mutex_lock(&g_aa_mutex);
+        ab = g_available_aggregates;
+        while (ab && ab->capacity < capacity) {
+            addr_buffer_t *tmp = ab->next;
+            forkgc_alloc_munmap(ab);
+            ab = tmp;
+        }
+        if (ab) {
+            g_available_aggregates = ab->next;
+            pthread_mutex_unlock(&g_aa_mutex);
+            assert(ab->ref_count == 0);
+            return ab;
+        }
+        pthread_mutex_unlock(&g_aa_mutex);
+    }
+
     // How many pages of memory are needed to store this many addresses?
     size_t pages_of_addrs = ((capacity * sizeof(size_t))
                              + PAGESIZE - sizeof(size_t)) / PAGESIZE;
@@ -106,18 +132,21 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
     return ab;
 }
 
-#include <stdio.h>
 void forkscan_release_buffer (addr_buffer_t *ab)
 {
     assert(ab != g_first_retiree_buffer);
     assert(ab != g_last_retiree_buffer);
-    if (ab->capacity == g_default_capacity) {
+    if (ab->is_aggregate == 0) {
+        assert(ab->capacity == g_default_capacity);
         pthread_mutex_lock(&g_reclaimer_list_lock);
         ab->next = g_reclaimer_list;
         g_reclaimer_list = ab;
         pthread_mutex_unlock(&g_reclaimer_list_lock);
     } else {
-        forkgc_alloc_munmap(ab); // FIXME: Munmap is bad.
+        pthread_mutex_lock(&g_aa_mutex);
+        ab->next = g_available_aggregates;
+        g_available_aggregates = ab;
+        pthread_mutex_unlock(&g_aa_mutex);
     }
 }
 

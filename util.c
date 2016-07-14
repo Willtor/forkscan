@@ -260,7 +260,7 @@ void forkscan_util_free_ptrs (thread_data_t *td)
         void *ptr = (void*)s;
         // FIXME: What about this memset?  Does it save time
         // to have it on or off?
-        memset(ptr, 0x0, MALLOC_USABLE_SIZE(ptr));
+        memset(ptr, 0xF0, MALLOC_USABLE_SIZE(ptr));
         FREE(ptr);
     }
 }
