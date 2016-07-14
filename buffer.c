@@ -51,6 +51,8 @@ addr_buffer_t *forkscan_make_reclaimer_buffer ()
         assert(ab);
         g_reclaimer_list = ab->next;
         pthread_mutex_unlock(&g_reclaimer_list_lock);
+        ab->n_addrs = 0;
+        assert(ab->ref_count == 0);
         return ab;
     }
 
