@@ -109,6 +109,8 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
 #include <stdio.h>
 void forkscan_release_buffer (addr_buffer_t *ab)
 {
+    assert(ab != g_first_retiree_buffer);
+    assert(ab != g_last_retiree_buffer);
     if (ab->capacity == g_default_capacity) {
         pthread_mutex_lock(&g_reclaimer_list_lock);
         ab->next = g_reclaimer_list;

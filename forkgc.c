@@ -273,7 +273,6 @@ static void garbage_collect (addr_buffer_t *ab)
     assert(g_uncollected_data == NULL);
     g_uncollected_data =
         forkscan_make_aggregate_buffer(working_data->capacity);
-    ab->n_addrs = 0;
     int i;
     for (i = 0; i < working_data->n_addrs; ++i) {
         if ((working_data->addrs[i] & 0x1) == 0) continue;
