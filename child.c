@@ -437,8 +437,6 @@ void forkgc_child (addr_buffer_t *ab, int fd)
     n_siblings = MIN_OF(n_siblings, g_n_ranges);
     n_siblings = MAX_OF(n_siblings, 1);
 
-    //fprintf(stderr, "Forking %d mark processes.\n", n_siblings);
-
     ab->sibling_mode = SIBLING_MODE_MARKING;
 
     int sibling_id = 0;
