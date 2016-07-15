@@ -520,7 +520,7 @@ void forkgc_child (addr_buffer_t *ab, int fd)
                 ab->more_marking_tbd = 0;
             }
             ab->completed_children = 0;
-            ab->round++;
+            __sync_fetch_and_add(&ab->round, 1);
         } else {
             while (round == ab->round) pthread_yield();
         }
