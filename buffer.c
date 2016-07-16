@@ -37,6 +37,7 @@ static pthread_mutex_t g_retiree_mutex = PTHREAD_MUTEX_INITIALIZER;
 static addr_buffer_t *g_available_aggregates;
 static pthread_mutex_t g_aa_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+#include <stdio.h>
 addr_buffer_t *forkscan_make_reclaimer_buffer ()
 {
     addr_buffer_t *ab = g_reclaimer_list;

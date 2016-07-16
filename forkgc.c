@@ -160,11 +160,16 @@ static void generate_minimap (addr_buffer_t *ab)
     }
 }
 
-static addr_buffer_t *aggregate_addrs (addr_buffer_t *data_list)
+static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
+                                       addr_buffer_t *data_list)
 {
     addr_buffer_t *ret, *tmp;
     size_t n_addrs = 0;
     int list_count = 0;
+
+    if (old) {
+        n_addrs = old->n_addrs;
+    }
 
     tmp = data_list;
     do {
@@ -176,13 +181,16 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *data_list)
 
     assert(n_addrs != 0);
 
-    if (n_addrs > data_list->capacity || !data_list->is_aggregate) {
+    if (old && old->capacity > n_addrs) {
+        ret = old;
+    } else {
         ret = forkscan_make_aggregate_buffer(n_addrs > data_list->capacity ?
                                              n_addrs : data_list->capacity);
-    } else {
-        ret = data_list;
-        data_list = data_list->next;
         ret->next = NULL;
+        if (old) {
+            memcpy(ret->addrs, old->addrs, old->n_addrs * sizeof(size_t));
+            forkscan_release_buffer(old);
+        }
     }
 
     // Copy the addresses into the aggregate buffer.
@@ -209,21 +217,8 @@ static void garbage_collect (addr_buffer_t *ab)
     int sig_count;
     int pipefd[2];
 
-    // Include the addrs from the last collection iteration.
-    if (g_uncollected_data) {
-        g_uncollected_data->next = ab;
-        ab = g_uncollected_data;
-        g_uncollected_data = NULL;
-    }
-
-#ifndef NDEBUG
-    if (ab) {
-        int i;
-        for (i = 0; i < ab->n_addrs; ++i) assert(ab->addrs[i] != 0);
-    }
-#endif
-
-    working_data = aggregate_addrs(ab);
+    working_data = aggregate_addrs(g_uncollected_data, ab);
+    g_uncollected_data = NULL;
 
     // Open a pipe for communication between parent and child.
     if (0 != pipe2(pipefd, O_DIRECT)) {
@@ -238,6 +233,7 @@ static void garbage_collect (addr_buffer_t *ab)
     start = forkscan_rdtsc();
     sig_count = forkgc_proc_signal(SIGFORKGC);
     while (g_received_signal < sig_count) pthread_yield();
+    forkscan_alloc_memusage();
     child_pid = fork();
 
     if (child_pid == -1) {
@@ -282,15 +278,10 @@ static void garbage_collect (addr_buffer_t *ab)
 
     // Free up unnecessary space.
     assert(ab);
-    addr_buffer_t *tmp = ab->next;
     while (ab) {
-        if (ab->ref_count == 0) {
-            forkscan_release_buffer(ab);
-        } else {
-            ab->next = NULL;
-        }
+        addr_buffer_t *tmp = ab->next;
+        forkscan_release_buffer(ab);
         ab = tmp;
-        if (ab) tmp = ab->next;
     }
 
     forkscan_buffer_unref_buffer(working_data);
