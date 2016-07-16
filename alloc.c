@@ -313,21 +313,3 @@ mem_range_t forkgc_alloc_next_subrange (mem_range_t *big_range)
     // FIXME: Using mem_range_t creates a circular dependency on util.h.
     return metadata_break_range(big_range);
 }
-
-size_t forkscan_alloc_memusage ()
-{
-    size_t alist = 0;
-    memory_metadata_t *mm;
-
-    mm = alloc_list;
-    if (mm) {
-        do {
-            alist += mm->length;
-            mm = mm->next;
-        } while (mm != alloc_list);
-    }
-
-    fprintf(stderr, "alloc usage: %zu\n", alist / PAGESIZE);
-
-    return alist;
-}

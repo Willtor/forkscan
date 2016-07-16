@@ -233,7 +233,6 @@ static void garbage_collect (addr_buffer_t *ab)
     start = forkscan_rdtsc();
     sig_count = forkgc_proc_signal(SIGFORKGC);
     while (g_received_signal < sig_count) pthread_yield();
-    forkscan_alloc_memusage();
     child_pid = fork();
 
     if (child_pid == -1) {
