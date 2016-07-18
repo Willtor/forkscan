@@ -112,6 +112,8 @@ static sweeper_work_t g_sweeper_work[MAX_SWEEPER_THREADS];
 
 static volatile size_t g_total_sweep_time = 0;
 
+size_t g_total_wait_time_ms = 0;
+
 static void address_range (sweeper_work_t *work)
 {
     addr_buffer_t *ab = work->unref_config->ab;
@@ -434,6 +436,7 @@ void forkgc_print_statistics ()
            : ((int)(g_total_fork_time / g_cleanup_counter)));
     printf("ave-sweep-time: %zu\n", g_sweep_counter > 0
            ? g_total_sweep_time / g_sweep_counter : 0);
+    printf("wait-time: %zu\n", g_total_wait_time_ms);
 }
 
 __attribute__((destructor))

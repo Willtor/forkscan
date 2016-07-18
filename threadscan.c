@@ -177,13 +177,20 @@ void forkgc_retire (void *ptr)
 
     thread_data_t *td = forkgc_thread_get_td();
     forkgc_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
-    while (forkgc_queue_is_full(&td->ptr_list)) {
-        // While this thread's local queue of pointers is full, try to initiate
-        // reclamation.
+    if (forkgc_queue_is_full(&td->ptr_list)) {
+        size_t start, end;
 
-        forkgc_thread_cleanup_try_acquire()
-            ? become_reclaimer() // this will release the cleanup lock.
-            : yield();
+        start = forkscan_rdtsc();
+        do {
+            // While this thread's local queue of pointers is full, try to
+            // initiate reclamation.
+
+            forkgc_thread_cleanup_try_acquire()
+                ? become_reclaimer() // this will release the cleanup lock.
+                : yield();
+        } while (forkgc_queue_is_full(&td->ptr_list));
+        end = forkscan_rdtsc();
+        td->wait_time_ms += end - start;
     }
 }
 

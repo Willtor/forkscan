@@ -99,6 +99,8 @@ void forkgc_thread_cleanup ()
     assert(td);
     td->is_active = 0;
     forkgc_proc_remove_thread_data(td);
+    extern size_t g_total_wait_time_ms; // FIXME: Bad, bad, bad!
+    __sync_fetch_and_add(&g_total_wait_time_ms, td->wait_time_ms);
     forkgc_util_thread_data_decr_ref(td);
 }
 

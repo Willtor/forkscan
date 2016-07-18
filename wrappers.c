@@ -136,6 +136,8 @@ int pthread_create (pthread_t *thread,
     td->user_stack_low = (char*)stack;
     td->user_stack_high = (char*)stack + stacksize;
 
+    td->wait_time_ms = 0;
+
     // Insert the metadata into the global structure.
     forkgc_proc_add_thread_data(td);
 

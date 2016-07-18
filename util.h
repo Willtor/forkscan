@@ -111,6 +111,8 @@ struct thread_data_t {
 
     queue_t ptr_list;         // Local list of pointers to be collected.
 
+    size_t wait_time_ms;      // reclamation time + throttling.
+
     addr_buffer_t *retiree_buffer;
     int begin_retiree_idx;
     int end_retiree_idx;
