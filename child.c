@@ -208,10 +208,7 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
 
     int cached_loc = 0;
     for (i = 0; i < g_lookaside_count; ++i) {
-        if (cmp == g_lookaside_list[i]) {
-            abort(); // No possible duplicates after compaction?!
-            continue; // Possible duplicates.
-        }
+        assert(cmp != g_lookaside_list[i]);
         cmp = g_lookaside_list[i];
         int loc = addr_find_hint(cmp, ab, cached_loc);
         cached_loc = loc;
