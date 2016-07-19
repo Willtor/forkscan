@@ -31,6 +31,7 @@ THE SOFTWARE.
 #include <pthread.h>
 #include <string.h>
 #include "thread.h"
+#include <unistd.h>
 #include "util.h"
 
 /****************************************************************************/
@@ -96,8 +97,11 @@ static void become_reclaimer ()
 /*                            Bystander threads.                            */
 /****************************************************************************/
 
-static void yield ()
+static void yield (size_t n_yields)
 {
+    // FIXME: There's performance here... sure of it!
+    //if (n_yields > 10) usleep(MIN_OF(n_yields, 100));
+    //else pthread_yield();
     forkscan_util_free_ptrs(forkgc_thread_get_td());
     pthread_yield();
 }
@@ -179,6 +183,7 @@ void forkgc_retire (void *ptr)
     forkgc_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
     if (forkgc_queue_is_full(&td->ptr_list)) {
         size_t start, end;
+        size_t n_loops = 0;
 
         start = forkscan_rdtsc();
         do {
@@ -187,7 +192,7 @@ void forkgc_retire (void *ptr)
 
             forkgc_thread_cleanup_try_acquire()
                 ? become_reclaimer() // this will release the cleanup lock.
-                : yield();
+                : yield(n_loops);
         } while (forkgc_queue_is_full(&td->ptr_list));
         end = forkscan_rdtsc();
         td->wait_time_ms += end - start;
