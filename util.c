@@ -61,15 +61,14 @@ static thread_data_t *g_td_staged_to_free = NULL;
 /*                       Storage for per-thread data.                       */
 /****************************************************************************/
 
-DEFINE_POOL_ALLOC(memblock, MEMBLOCK_SIZE, 8, forkgc_alloc_mmap_shared)
+DEFINE_POOL_ALLOC(threaddata, MEMBLOCK_SIZE, 8, forkgc_alloc_mmap_shared)
 DEFINE_POOL_ALLOC(ptrlist, (g_forkgc_ptrs_per_thread * sizeof(size_t)), 8,
                   forkgc_alloc_mmap_shared)
 
 thread_data_t *forkgc_util_thread_data_new ()
 {
-    char *memblock = (char*)pool_alloc_memblock();
+    thread_data_t *td = (thread_data_t*)pool_alloc_threaddata();
     size_t *local_list = (size_t*)pool_alloc_ptrlist();
-    thread_data_t *td = (thread_data_t*)memblock;
     forkgc_queue_init(&td->ptr_list, local_list,
                       g_forkgc_ptrs_per_thread);
     td->local_block.low = td->local_block.high = 0;
@@ -97,7 +96,7 @@ void forkgc_util_thread_data_free (thread_data_t *td)
     // thread's ptr_list!  Right now, they're getting leaked.
     pool_free_ptrlist(td->ptr_list.e);
 
-    pool_free_memblock(td);
+    pool_free_threaddata(td);
 }
 
 void forkgc_util_thread_data_cleanup (pthread_t tid)
