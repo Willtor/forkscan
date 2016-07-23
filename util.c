@@ -61,6 +61,10 @@ static thread_data_t *g_td_staged_to_free = NULL;
 /*                       Storage for per-thread data.                       */
 /****************************************************************************/
 
+// thread_data_t and pointer lists are allocated in memory shared with
+// forked children since it's purely _our_ memory and nothing will be
+// hidden.  As a consequence, there is no copy-on-write cost for those
+// pages.
 DEFINE_POOL_ALLOC(threaddata, MEMBLOCK_SIZE, 8, forkgc_alloc_mmap_shared)
 DEFINE_POOL_ALLOC(ptrlist, (g_forkgc_ptrs_per_thread * sizeof(size_t)), 8,
                   forkgc_alloc_mmap_shared)
