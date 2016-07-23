@@ -40,7 +40,7 @@ THE SOFTWARE.
         pthread_mutex_unlock(&g_##pool##_lock);                         \
         if (ret) return (void*)ret;                                     \
         char *arr =                                                     \
-            (char*)mmap(dtsize * batch_sz);                             \
+            (char*)mmap(dtsize * batch_sz, #pool);                      \
         pthread_mutex_lock(&g_##pool##_lock);                           \
         int i;                                                          \
         for (i = 1; i < batch_sz; ++i) {                                \

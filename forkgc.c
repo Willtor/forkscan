@@ -234,8 +234,6 @@ static void garbage_collect (addr_buffer_t *ab)
     g_received_signal = 0;
     start = forkscan_rdtsc();
     sig_count = forkgc_proc_signal(SIGFORKGC);
-    forkscan_alloc_report();
-    forkscan_buffer_report();
     while (g_received_signal < sig_count) pthread_yield();
     child_pid = fork();
 
@@ -254,6 +252,14 @@ static void garbage_collect (addr_buffer_t *ab)
     close(pipefd[PIPE_WRITE]);
     end = forkscan_rdtsc();
     g_total_fork_time += end - start;
+
+    // Free up unnecessary space.
+    assert(ab);
+    while (ab) {
+        addr_buffer_t *tmp = ab->next;
+        forkscan_release_buffer(ab);
+        ab = tmp;
+    }
 
     // Wait for the child to complete the scan.
     size_t bytes_scanned;
@@ -277,14 +283,6 @@ static void garbage_collect (addr_buffer_t *ab)
         if ((working_data->addrs[i] & 0x1) == 0) continue;
         g_uncollected_data->addrs[g_uncollected_data->n_addrs++] =
             PTR_MASK(working_data->addrs[i]);
-    }
-
-    // Free up unnecessary space.
-    assert(ab);
-    while (ab) {
-        addr_buffer_t *tmp = ab->next;
-        forkscan_release_buffer(ab);
-        ab = tmp;
     }
 
     forkscan_buffer_unref_buffer(working_data);

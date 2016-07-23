@@ -64,7 +64,7 @@ addr_buffer_t *forkscan_make_reclaimer_buffer ()
         g_default_capacity = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
     }
     size_t sz = g_default_capacity * sizeof(size_t) + PAGESIZE;
-    char *raw_mem = forkgc_alloc_mmap(sz);
+    char *raw_mem = forkgc_alloc_mmap(sz, "reclaimer");
 
     //   0 - 4095: Reserved page for the addr_buffer_t struct.
     //   4096 -  : Address list.
@@ -123,7 +123,8 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
         (char*)forkgc_alloc_mmap_shared((pages_of_addrs     // addr array.
                                          + pages_of_minimap // minimap.
                                          + 1)               // struct page.
-                                        * PAGESIZE);
+                                        * PAGESIZE,
+                                        "aggregate");
 
     // Perform assignments as offsets into the block that was bulk-allocated.
     size_t offset = 0;
@@ -235,25 +236,4 @@ void *forkscan_buffer_makestack (size_t *stacksize)
 void forkscan_buffer_freestack (void *p)
 {
     pool_free_stack(p);
-}
-
-void forkscan_buffer_report ()
-{
-    addr_buffer_t *tmp;
-    int n_retiree_buffers = 0, n_available_aggregates = 0, n_reclaimers = 0;
-
-    for (tmp = g_reclaimer_list; tmp != NULL; tmp = tmp->next) {
-        ++n_reclaimers;
-    }
-
-    for (tmp = g_first_retiree_buffer; tmp != NULL; tmp = tmp->next) {
-        ++n_retiree_buffers;
-    }
-
-    for (tmp = g_available_aggregates; tmp != NULL; tmp = tmp->next) {
-        ++n_available_aggregates;
-    }
-
-    fprintf(stderr, "reclaimers: %d, retirees = %d, available = %d\n",
-            n_reclaimers, n_retiree_buffers, n_available_aggregates);
 }

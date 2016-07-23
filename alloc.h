@@ -36,7 +36,7 @@ THE SOFTWARE.
  * only ever ask for big chunks in multiples of the page size.
  * @return The allocated memory.
  */
-void *forkgc_alloc_mmap (size_t size);
+void *forkgc_alloc_mmap (size_t size, const char *reason);
 
 /**
  * mmap() for the ForkGC system.  This call never fails.  But you should
@@ -44,7 +44,7 @@ void *forkgc_alloc_mmap (size_t size);
  * memory is marked as shared among processes.
  * @return The allocated memory.
  */
-void *forkgc_alloc_mmap_shared (size_t size);
+void *forkgc_alloc_mmap_shared (size_t size, const char *reason);
 
 /**
  * munmap() for the ForkGC system.
@@ -61,7 +61,5 @@ void forkgc_alloc_munmap (void *ptr);
  * found in *big_range.
  */
 mem_range_t forkgc_alloc_next_subrange (mem_range_t *big_range);
-
-void forkscan_alloc_report ();
 
 #endif // !defined _ALLOC_H_

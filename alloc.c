@@ -45,6 +45,7 @@ struct memory_metadata_t
 {
     void *addr;
     size_t length;
+    const char *reason;
     memory_metadata_t *next, *prev;
 };
 
@@ -241,13 +242,14 @@ static mem_range_t metadata_break_range (mem_range_t *big_range)
     return ret;
 }
 
-static void *alloc_mmap (size_t size, int shared)
+static void *alloc_mmap (size_t size, const char *reason, int shared)
 {
     memory_metadata_t *meta = metadata_new();
     assert(size % PAGESIZE == 0);
     assert(meta);
     meta->length = size;
     meta->addr = mmap_wrap(size, shared);
+    meta->reason = reason;
     assert(meta->addr && meta->addr != MAP_FAILED);
     metadata_insert(meta);
     if (0 != mprotect(meta->addr, size, PROT_READ | PROT_WRITE)) {
@@ -266,10 +268,9 @@ static void *alloc_mmap (size_t size, int shared)
  * only ever ask for big chunks in multiples of the page size.
  * @return The allocated memory.
  */
-void *forkgc_alloc_mmap (size_t size)
+void *forkgc_alloc_mmap (size_t size, const char *reason)
 {
-    fprintf(stderr, "*** mmap: %zu\n", size / 4096);
-    return alloc_mmap(size, /*shared=*/0);
+    return alloc_mmap(size, reason, /*shared=*/0);
 }
 
 /**
@@ -278,10 +279,9 @@ void *forkgc_alloc_mmap (size_t size)
  * memory is marked as shared among processes.
  * @return The allocated memory.
  */
-void *forkgc_alloc_mmap_shared (size_t size)
+void *forkgc_alloc_mmap_shared (size_t size, const char *reason)
 {
-    fprintf(stderr, "*** mmap shared: %zu\n", size / 4096);
-    return alloc_mmap(size, /*shared=*/1);
+    return alloc_mmap(size, reason, /*shared=*/1);
 }
 
 /**
@@ -314,28 +314,4 @@ mem_range_t forkgc_alloc_next_subrange (mem_range_t *big_range)
 {
     // FIXME: Using mem_range_t creates a circular dependency on util.h.
     return metadata_break_range(big_range);
-}
-
-void forkscan_alloc_report ()
-{
-    memory_metadata_t *tmp = alloc_list;
-    size_t memory = 0, biggest = 0;
-    int node_count = 0, n_biggest = 0;
-    if (tmp) {
-        do {
-            ++node_count;
-            memory += tmp->length;
-            if (tmp->length > biggest) {
-                biggest = tmp->length;
-                n_biggest = 0;
-            }
-            if (tmp->length == biggest) {
-                ++n_biggest;
-            }
-            tmp = tmp->next;
-        } while (tmp != alloc_list);
-    }
-
-    fprintf(stderr, "pages: %zu (in %d nodes)\n  biggest: %zu (%d of them)\n",
-            memory / 4096, node_count, biggest / 4096, n_biggest);
 }

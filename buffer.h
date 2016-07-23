@@ -68,7 +68,5 @@ void *forkscan_buffer_makestack (size_t *stacksize);
 
 void forkscan_buffer_freestack (void *p);
 
-void forkscan_buffer_report ();
-
 #endif // !defined _BUFFER_H_
 
