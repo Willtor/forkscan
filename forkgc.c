@@ -205,11 +205,6 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
     }
     assert(ret->n_addrs == n_addrs);
 
-    // Sort the addresses and generate the minimap for the scanner.
-    forkgc_util_sort(ret->addrs, ret->n_addrs);
-    assert_monotonicity(ret->addrs, ret->n_addrs);
-    generate_minimap(ret);
-
     return ret;
 }
 
@@ -240,6 +235,11 @@ static void garbage_collect (addr_buffer_t *ab)
     if (child_pid == -1) {
         forkgc_fatal("Collection failed (fork).\n");
     } else if (child_pid == 0) {
+        // Sort the addresses and generate the minimap for the scanner.
+        forkgc_util_sort(working_data->addrs, working_data->n_addrs);
+        assert_monotonicity(working_data->addrs, working_data->n_addrs);
+        generate_minimap(working_data);
+
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
         close(pipefd[PIPE_READ]);
