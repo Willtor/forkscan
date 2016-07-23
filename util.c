@@ -61,8 +61,9 @@ static thread_data_t *g_td_staged_to_free = NULL;
 /*                       Storage for per-thread data.                       */
 /****************************************************************************/
 
-DEFINE_POOL_ALLOC(memblock, MEMBLOCK_SIZE, 8)
-DEFINE_POOL_ALLOC(ptrlist, (g_forkgc_ptrs_per_thread * sizeof(size_t)), 8)
+DEFINE_POOL_ALLOC(memblock, MEMBLOCK_SIZE, 8, forkgc_alloc_mmap_shared)
+DEFINE_POOL_ALLOC(ptrlist, (g_forkgc_ptrs_per_thread * sizeof(size_t)), 8,
+                  forkgc_alloc_mmap_shared)
 
 thread_data_t *forkgc_util_thread_data_new ()
 {

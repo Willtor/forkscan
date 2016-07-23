@@ -280,6 +280,7 @@ void *forkgc_alloc_mmap (size_t size)
  */
 void *forkgc_alloc_mmap_shared (size_t size)
 {
+    fprintf(stderr, "*** mmap shared: %zu\n", size / 4096);
     return alloc_mmap(size, /*shared=*/1);
 }
 

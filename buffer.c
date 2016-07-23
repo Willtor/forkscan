@@ -224,7 +224,7 @@ void forkscan_buffer_unref_buffer (addr_buffer_t *ab)
     pthread_mutex_unlock(&g_retiree_mutex);
 }
 
-DEFINE_POOL_ALLOC(stack, STACKSIZE, NSTACKS)
+DEFINE_POOL_ALLOC(stack, STACKSIZE, NSTACKS, forkgc_alloc_mmap)
 
 void *forkscan_buffer_makestack (size_t *stacksize)
 {
