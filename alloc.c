@@ -57,7 +57,7 @@ static size_t HIGH_ADDR (memory_metadata_t *m) {
 }
 
 static memory_metadata_t *free_list = NULL;
-static memory_metadata_t *alloc_list = NULL;
+static memory_metadata_t *alloc_list = NULL; // circular linked list.
 
 static pthread_mutex_t list_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -268,6 +268,7 @@ static void *alloc_mmap (size_t size, int shared)
  */
 void *forkgc_alloc_mmap (size_t size)
 {
+    fprintf(stderr, "*** mmap: %zu\n", size / 4096);
     return alloc_mmap(size, /*shared=*/0);
 }
 
@@ -312,4 +313,28 @@ mem_range_t forkgc_alloc_next_subrange (mem_range_t *big_range)
 {
     // FIXME: Using mem_range_t creates a circular dependency on util.h.
     return metadata_break_range(big_range);
+}
+
+void forkscan_alloc_report ()
+{
+    memory_metadata_t *tmp = alloc_list;
+    size_t memory = 0, biggest = 0;
+    int node_count = 0, n_biggest = 0;
+    if (tmp) {
+        do {
+            ++node_count;
+            memory += tmp->length;
+            if (tmp->length > biggest) {
+                biggest = tmp->length;
+                n_biggest = 0;
+            }
+            if (tmp->length == biggest) {
+                ++n_biggest;
+            }
+            tmp = tmp->next;
+        } while (tmp != alloc_list);
+    }
+
+    fprintf(stderr, "pages: %zu (in %d nodes)\n  biggest: %zu (%d of them)\n",
+            memory / 4096, node_count, biggest / 4096, n_biggest);
 }

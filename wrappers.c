@@ -123,9 +123,7 @@ int pthread_create (pthread_t *thread,
     }
 
     if (NULL == stack) {
-        stacksize = 2 * 1024 * 1024; // 2 MB.
-        assert(stacksize % PAGESIZE == 0);
-        stack = forkgc_alloc_mmap(stacksize);
+        stack = forkscan_buffer_makestack(&stacksize);
         ret = pthread_attr_setstack(&real_attr, stack, stacksize);
         if (0 != ret) {
             forkgc_fatal("unable to set stack attributes.\n");
@@ -150,7 +148,7 @@ int pthread_create (pthread_t *thread,
         // problem, though.  Just clean up the memory we allocated for
         // the thread.  The end.
         if (td->stack_is_ours) {
-            forkgc_alloc_munmap(stack);
+            forkscan_buffer_freestack(stack);
         }
         forkgc_util_thread_data_free(td);
     }

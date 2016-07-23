@@ -61,12 +61,13 @@ static thread_data_t *g_td_staged_to_free = NULL;
 /*                       Storage for per-thread data.                       */
 /****************************************************************************/
 
+DEFINE_POOL_ALLOC(memblock, MEMBLOCK_SIZE, 8)
+DEFINE_POOL_ALLOC(ptrlist, (g_forkgc_ptrs_per_thread * sizeof(size_t)), 8)
+
 thread_data_t *forkgc_util_thread_data_new ()
 {
-    char *memblock = (char*)forkgc_alloc_mmap(MEMBLOCK_SIZE);
-    size_t *local_list =
-        (size_t*)forkgc_alloc_mmap(g_forkgc_ptrs_per_thread
-                                   * sizeof(size_t));
+    char *memblock = (char*)pool_alloc_memblock();
+    size_t *local_list = (size_t*)pool_alloc_ptrlist();
     thread_data_t *td = (thread_data_t*)memblock;
     forkgc_queue_init(&td->ptr_list, local_list,
                       g_forkgc_ptrs_per_thread);
@@ -93,9 +94,9 @@ void forkgc_util_thread_data_free (thread_data_t *td)
 
     // FIXME: Should do something about any possible remaining pointers in this
     // thread's ptr_list!  Right now, they're getting leaked.
-    forkgc_alloc_munmap(td->ptr_list.e);
+    pool_free_ptrlist(td->ptr_list.e);
 
-    forkgc_alloc_munmap(td);
+    pool_free_memblock(td);
 }
 
 void forkgc_util_thread_data_cleanup (pthread_t tid)
@@ -124,7 +125,7 @@ void forkgc_util_thread_data_cleanup (pthread_t tid)
     }
 
     if (td->stack_is_ours) {
-        forkgc_alloc_munmap(td->user_stack_low);
+        forkscan_buffer_freestack(td->user_stack_low);
     }
 
     forkgc_util_thread_data_free(td);

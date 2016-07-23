@@ -62,4 +62,6 @@ void forkgc_alloc_munmap (void *ptr);
  */
 mem_range_t forkgc_alloc_next_subrange (mem_range_t *big_range);
 
+void forkscan_alloc_report ();
+
 #endif // !defined _ALLOC_H_

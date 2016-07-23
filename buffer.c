@@ -26,6 +26,9 @@ THE SOFTWARE.
 #include "env.h"
 #include <pthread.h>
 
+#define STACKSIZE (2 * 1024 * 1024)
+#define NSTACKS 16
+
 static int g_default_capacity;
 static pthread_mutex_t g_reclaimer_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static addr_buffer_t *g_reclaimer_list;
@@ -219,4 +222,38 @@ void forkscan_buffer_unref_buffer (addr_buffer_t *ab)
         }
     }
     pthread_mutex_unlock(&g_retiree_mutex);
+}
+
+DEFINE_POOL_ALLOC(stack, STACKSIZE, NSTACKS)
+
+void *forkscan_buffer_makestack (size_t *stacksize)
+{
+    *stacksize = STACKSIZE;
+    return pool_alloc_stack();
+}
+
+void forkscan_buffer_freestack (void *p)
+{
+    pool_free_stack(p);
+}
+
+void forkscan_buffer_report ()
+{
+    addr_buffer_t *tmp;
+    int n_retiree_buffers = 0, n_available_aggregates = 0, n_reclaimers = 0;
+
+    for (tmp = g_reclaimer_list; tmp != NULL; tmp = tmp->next) {
+        ++n_reclaimers;
+    }
+
+    for (tmp = g_first_retiree_buffer; tmp != NULL; tmp = tmp->next) {
+        ++n_retiree_buffers;
+    }
+
+    for (tmp = g_available_aggregates; tmp != NULL; tmp = tmp->next) {
+        ++n_available_aggregates;
+    }
+
+    fprintf(stderr, "reclaimers: %d, retirees = %d, available = %d\n",
+            n_reclaimers, n_retiree_buffers, n_available_aggregates);
 }

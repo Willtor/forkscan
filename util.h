@@ -24,6 +24,7 @@ THE SOFTWARE.
 #define _UTIL_H_
 
 #include "buffer.h"
+#include "metautil.h"
 #include <pthread.h>
 #include "queue.h"
 #include <signal.h>

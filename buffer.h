@@ -64,5 +64,11 @@ addr_buffer_t *forkscan_buffer_get_retiree_buffer ();
 
 void forkscan_buffer_unref_buffer (addr_buffer_t *ab);
 
+void *forkscan_buffer_makestack (size_t *stacksize);
+
+void forkscan_buffer_freestack (void *p);
+
+void forkscan_buffer_report ();
+
 #endif // !defined _BUFFER_H_
 
