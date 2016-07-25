@@ -246,10 +246,10 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
  * the nodes.
  */
 static void find_roots (size_t low, size_t high,
-                        addr_buffer_t *ab)
+                        addr_buffer_t *ab, addr_buffer_t *deadrefs)
 {
-    int pool_idx;
-    size_t pool_addr;
+    int pool_idx, dead_idx;
+    size_t pool_addr, dead_addr;
     size_t guarded_addr;
     trace_stats_t ts;
 
@@ -258,18 +258,36 @@ static void find_roots (size_t low, size_t high,
 
     assert(ts.min <= ts.max);
 
+    void update_addr_loc (int *idx, size_t *addr, addr_buffer_t *buf)
+    {
+        ++*idx;
+        if (buf->n_addrs > *idx) {
+            *addr = PTR_MASK(buf->addrs[*idx]);
+        } else {
+            *addr = (size_t)-1;
+        }
+    }
+
     // Figure out where to start the search.  Any memory is a potential ptr
     // to one of our addresses, but we avoid searching memory we're tracking
     // because that will be done during mark.  The "pool_addr" indicates the
     // next location in memory we want to _avoid_ scanning.
     pool_idx = addr_find(low, ab);
     pool_addr = PTR_MASK(ab->addrs[pool_idx]);
-    ++pool_idx;
-    if (ab->n_addrs > pool_idx) {
-        pool_addr = PTR_MASK(ab->addrs[pool_idx]);
-    } else {
-        pool_addr = (size_t)-1;
+    if (pool_addr <= low) {
+        size_t sz = MALLOC_USABLE_SIZE((void*)pool_addr);
+        if (pool_addr + sz > low) low = pool_addr + sz;
+        update_addr_loc(&pool_idx, &pool_addr, ab);
     }
+
+    /*
+    dead_idx = addr_find(low, deadrefs);
+    dead_addr = PTR_MASK(deadrefs[dead_idx]);
+    ++dead_idx;
+    if (deadrefs->n_addrs > dead_idx) {
+        dead_addr = PTR_MASK(dead->addrs[dead_idx]);
+    }
+    */
 
     guarded_addr = pool_addr;
     while (low < high) {
@@ -295,13 +313,7 @@ static void find_roots (size_t low, size_t high,
         assert(low == next_stopping_point);
         if (next_stopping_point == guarded_addr) {
             low += MALLOC_USABLE_SIZE((void*)guarded_addr);
-            ++pool_idx;
-            if (ab->n_addrs > pool_idx) {
-                pool_addr = PTR_MASK(ab->addrs[pool_idx]);
-                assert(pool_addr > ab->addrs[pool_idx -1]);
-            } else {
-                pool_addr = (size_t)-1;
-            }
+            update_addr_loc(&pool_idx, &pool_addr, ab);
             guarded_addr = pool_addr;
             assert(guarded_addr >= low);
         }
@@ -413,6 +425,8 @@ static int collect_ranges (void *p,
 
 void forkgc_child (addr_buffer_t *ab, int fd)
 {
+    addr_buffer_t *deadrefs = forkscan_buffer_get_retiree_buffer();
+
     // Scan memory for references.
     g_bytes_to_scan = 0;
     forkgc_proc_map_iterate(collect_ranges, NULL);
@@ -450,7 +464,7 @@ void forkgc_child (addr_buffer_t *ab, int fd)
         // up the work evenly, or some will sit around waiting while there's
         // work to be done.
 
-        find_roots(g_ranges[i].low, g_ranges[i].high, ab);
+        find_roots(g_ranges[i].low, g_ranges[i].high, ab, deadrefs);
         total_memory += g_ranges[i].high - g_ranges[i].low;
     }
 

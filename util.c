@@ -262,6 +262,7 @@ void forkscan_util_free_ptrs (thread_data_t *td)
             continue;
         }
         assert(0 == (s & 0x3));
+        ab->addrs[td->begin_retiree_idx - 1] = s | 0x2; // Remove from set.
         void *ptr = (void*)s;
         // FIXME: What about this memset?  Does it save time
         // to have it on or off?

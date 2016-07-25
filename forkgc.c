@@ -168,10 +168,13 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
     addr_buffer_t *ret, *tmp;
     size_t n_addrs = 0;
     int list_count = 0;
+    size_t start, end;
+    size_t old_addrs;
 
     if (old) {
         n_addrs = old->n_addrs;
     }
+    old_addrs = n_addrs;
 
     tmp = data_list;
     do {
@@ -195,6 +198,8 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
         }
     }
 
+    start = forkscan_rdtsc();
+
     // Copy the addresses into the aggregate buffer.
     while (data_list) {
         memcpy(&ret->addrs[ret->n_addrs],
@@ -204,6 +209,10 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
         data_list = data_list->next;
     }
     assert(ret->n_addrs == n_addrs);
+
+    end = forkscan_rdtsc();
+    fprintf(stderr, "aggregation took %zu ms (%zu vals, %zu old, %d dl)\n",
+            end - start, n_addrs, old_addrs, list_count);
 
     return ret;
 }
@@ -284,6 +293,8 @@ static void garbage_collect (addr_buffer_t *ab)
         g_uncollected_data->addrs[g_uncollected_data->n_addrs++] =
             PTR_MASK(working_data->addrs[i]);
     }
+
+    fprintf(stderr, "  unreclaimed: %d\n", g_uncollected_data->n_addrs);
 
     forkscan_buffer_unref_buffer(working_data);
 }
