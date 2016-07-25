@@ -245,11 +245,10 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
  * will later be used as a basis for determining reachability of the rest of
  * the nodes.
  */
-static void find_roots (size_t low, size_t high,
-                        addr_buffer_t *ab, addr_buffer_t *deadrefs)
+static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
 {
-    int pool_idx, dead_idx;
-    size_t pool_addr, dead_addr;
+    int pool_idx;
+    size_t pool_addr;
     size_t guarded_addr;
     trace_stats_t ts;
 
@@ -279,15 +278,6 @@ static void find_roots (size_t low, size_t high,
         if (pool_addr + sz > low) low = pool_addr + sz;
         update_addr_loc(&pool_idx, &pool_addr, ab);
     }
-
-    /*
-    dead_idx = addr_find(low, deadrefs);
-    dead_addr = PTR_MASK(deadrefs[dead_idx]);
-    ++dead_idx;
-    if (deadrefs->n_addrs > dead_idx) {
-        dead_addr = PTR_MASK(dead->addrs[dead_idx]);
-    }
-    */
 
     guarded_addr = pool_addr;
     while (low < high) {
@@ -425,8 +415,6 @@ static int collect_ranges (void *p,
 
 void forkgc_child (addr_buffer_t *ab, int fd)
 {
-    addr_buffer_t *deadrefs = forkscan_buffer_get_retiree_buffer();
-
     // Scan memory for references.
     g_bytes_to_scan = 0;
     forkgc_proc_map_iterate(collect_ranges, NULL);
@@ -464,7 +452,7 @@ void forkgc_child (addr_buffer_t *ab, int fd)
         // up the work evenly, or some will sit around waiting while there's
         // work to be done.
 
-        find_roots(g_ranges[i].low, g_ranges[i].high, ab, deadrefs);
+        find_roots(g_ranges[i].low, g_ranges[i].high, ab);
         total_memory += g_ranges[i].high - g_ranges[i].low;
     }
 
