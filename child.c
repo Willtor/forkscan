@@ -245,10 +245,11 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
  * will later be used as a basis for determining reachability of the rest of
  * the nodes.
  */
-static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
+static void find_roots (size_t low, size_t high,
+                        addr_buffer_t *ab)
 {
-    size_t i;
-    int guarded_idx;
+    int pool_idx;
+    size_t pool_addr;
     size_t guarded_addr;
     trace_stats_t ts;
 
@@ -259,26 +260,18 @@ static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
 
     // Figure out where to start the search.  Any memory is a potential ptr
     // to one of our addresses, but we avoid searching memory we're tracking
-    // because that will be done during mark.  The "guarded_addr" indicates
-    // the next location in memory we want to _avoid_ scanning.
-    i = 0;
-    guarded_idx = addr_find(low, ab);
-    guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
-    if (guarded_addr <= low) {
-        size_t sz = MALLOC_USABLE_SIZE((void*)guarded_addr);
-        assert(sz > 0);
-        if (low < guarded_addr + sz) {
-            size_t diff = guarded_addr + sz - PTR_MASK(low);
-            i += ((int)diff) / sizeof(size_t); // FIXME: off-by-one?
-        }
-    }
-    ++guarded_idx;
-    if (ab->n_addrs > guarded_idx) {
-        guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
+    // because that will be done during mark.  The "pool_addr" indicates the
+    // next location in memory we want to _avoid_ scanning.
+    pool_idx = addr_find(low, ab);
+    pool_addr = PTR_MASK(ab->addrs[pool_idx]);
+    ++pool_idx;
+    if (ab->n_addrs > pool_idx) {
+        pool_addr = PTR_MASK(ab->addrs[pool_idx]);
     } else {
-        guarded_addr = (size_t)-1;
+        pool_addr = (size_t)-1;
     }
 
+    guarded_addr = pool_addr;
     while (low < high) {
         size_t next_stopping_point = MIN_OF(guarded_addr, high);
         assert((next_stopping_point & 0x3) == 0);
@@ -302,13 +295,14 @@ static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
         assert(low == next_stopping_point);
         if (next_stopping_point == guarded_addr) {
             low += MALLOC_USABLE_SIZE((void*)guarded_addr);
-            ++guarded_idx;
-            if (ab->n_addrs > guarded_idx) {
-                guarded_addr = PTR_MASK(ab->addrs[guarded_idx]);
-                assert(guarded_addr > ab->addrs[guarded_idx -1]);
+            ++pool_idx;
+            if (ab->n_addrs > pool_idx) {
+                pool_addr = PTR_MASK(ab->addrs[pool_idx]);
+                assert(pool_addr > ab->addrs[pool_idx -1]);
             } else {
-                guarded_addr = (size_t)-1;
+                pool_addr = (size_t)-1;
             }
+            guarded_addr = pool_addr;
             assert(guarded_addr >= low);
         }
     }
