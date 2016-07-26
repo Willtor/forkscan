@@ -194,6 +194,7 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
         ret->next = NULL;
         if (old) {
             memcpy(ret->addrs, old->addrs, old->n_addrs * sizeof(size_t));
+            ret->n_addrs = old->n_addrs;
             forkscan_release_buffer(old);
         }
     }
