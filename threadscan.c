@@ -102,7 +102,13 @@ static void yield (size_t n_yields)
     // FIXME: There's performance here... sure of it!
     //if (n_yields > 10) usleep(MIN_OF(n_yields, 100));
     //else pthread_yield();
+    g_in_malloc = 1;
     forkscan_util_free_ptrs(forkgc_thread_get_td());
+    g_in_malloc = 0;
+    if (g_waiting_to_fork) {
+        g_waiting_to_fork = 0;
+        forkgc_acknowledge_signal();
+    }
     pthread_yield();
 }
 
@@ -161,8 +167,8 @@ void *forkgc_malloc (size_t size)
         // Sadly, TC-Malloc has a deadlock bug when interacting with fork().
         // We need to make sure it isn't holding the global lock when we
         // initiate cleanup.
-        forkgc_acknowledge_signal();
         g_waiting_to_fork = 0;
+        forkgc_acknowledge_signal();
     }
     return p;
 }
@@ -212,8 +218,8 @@ void forkgc_free (void *ptr)
     g_in_malloc = 0;
 
     if (g_waiting_to_fork) {
-        forkgc_acknowledge_signal();
         g_waiting_to_fork = 0;
+        forkgc_acknowledge_signal();
     }
 }
 
