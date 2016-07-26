@@ -221,7 +221,6 @@ free_t *forkgc_util_pop_free_list ()
     return free_list;
 }
 
-
 void forkscan_util_free_ptrs (thread_data_t *td)
 {
     int i;
@@ -262,7 +261,7 @@ void forkscan_util_free_ptrs (thread_data_t *td)
             continue;
         }
         assert(0 == (s & 0x3));
-        ab->addrs[td->begin_retiree_idx - 1] = s | 0x2; // Remove from set.
+        ab->addrs[td->begin_retiree_idx - 1] = 0x2; // Remove from set.
         void *ptr = (void*)s;
         // FIXME: What about this memset?  Does it save time
         // to have it on or off?

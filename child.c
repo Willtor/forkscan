@@ -245,10 +245,11 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
  * will later be used as a basis for determining reachability of the rest of
  * the nodes.
  */
-static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
+static void find_roots (size_t low, size_t high,
+                        addr_buffer_t *ab, addr_buffer_t *deadrefs)
 {
-    int pool_idx;
-    size_t pool_addr;
+    int pool_idx, dead_idx = 0;
+    size_t pool_addr, dead_addr;
     size_t guarded_addr;
     trace_stats_t ts;
 
@@ -279,7 +280,20 @@ static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
         update_addr_loc(&pool_idx, &pool_addr, ab);
     }
 
-    guarded_addr = pool_addr;
+    if (deadrefs->n_addrs > 0) {
+        dead_idx = binary_search(low, deadrefs->addrs, 0, deadrefs->n_addrs);
+        dead_addr = deadrefs->addrs[dead_idx];
+        assert(0 == (dead_addr & 0x3));
+        if (dead_addr <= low) {
+            size_t sz = MALLOC_USABLE_SIZE((void*)dead_addr);
+            if (dead_addr + sz > low) low = dead_addr + sz;
+            update_addr_loc(&dead_idx, &dead_addr, deadrefs);
+            assert(low <= pool_addr);
+        }
+    } else dead_addr = (size_t)-1;
+
+    assert(pool_addr != dead_addr || pool_addr == (size_t)-1);
+    guarded_addr = MIN_OF(pool_addr, dead_addr);
     while (low < high) {
         size_t next_stopping_point = MIN_OF(guarded_addr, high);
         assert((next_stopping_point & 0x3) == 0);
@@ -303,9 +317,15 @@ static void find_roots (size_t low, size_t high, addr_buffer_t *ab)
         assert(low == next_stopping_point);
         if (next_stopping_point == guarded_addr) {
             low += MALLOC_USABLE_SIZE((void*)guarded_addr);
-            update_addr_loc(&pool_idx, &pool_addr, ab);
-            guarded_addr = pool_addr;
+            if (guarded_addr == pool_addr) {
+                update_addr_loc(&pool_idx, &pool_addr, ab);
+            } else {
+                assert(deadrefs);
+                update_addr_loc(&dead_idx, &dead_addr, deadrefs);
+            }
+            guarded_addr = MIN_OF(pool_addr, dead_addr);
             assert(guarded_addr >= low);
+            assert(pool_addr != dead_addr || pool_addr == (size_t)-1);
         }
     }
 }
@@ -413,8 +433,11 @@ static int collect_ranges (void *p,
     return 1;
 }
 
-void forkgc_child (addr_buffer_t *ab, int fd)
+void forkgc_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
 {
+    assert(ab);
+    assert(deadrefs);
+
     // Scan memory for references.
     g_bytes_to_scan = 0;
     forkgc_proc_map_iterate(collect_ranges, NULL);
@@ -452,7 +475,7 @@ void forkgc_child (addr_buffer_t *ab, int fd)
         // up the work evenly, or some will sit around waiting while there's
         // work to be done.
 
-        find_roots(g_ranges[i].low, g_ranges[i].high, ab);
+        find_roots(g_ranges[i].low, g_ranges[i].high, ab, deadrefs);
         total_memory += g_ranges[i].high - g_ranges[i].low;
     }
 

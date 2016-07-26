@@ -225,6 +225,52 @@ void forkscan_buffer_unref_buffer (addr_buffer_t *ab)
     pthread_mutex_unlock(&g_retiree_mutex);
 }
 
+/**
+ * Return a set of dead references (that might otherwise lead to false
+ * positives).  This takes no lock and should not be called when other
+ * threads could be acting on the list.
+ */
+addr_buffer_t *forkscan_buffer_get_dead_references ()
+{
+    // We can make *ret a static variable since it will only ever be used
+    // in sequential reclamation iterations.
+    static addr_buffer_t *ret = NULL;
+    if (NULL == ret) {
+        assert(g_default_capacity > 0);
+        size_t sz = g_default_capacity * sizeof(size_t) + PAGESIZE;
+        // mmap_shared to avoid the cost of COW.  This also needs to change
+        // if iterations are ever done in parallel.
+        char *raw_mem = forkgc_alloc_mmap_shared(sz, "deadrefs");
+        ret = (addr_buffer_t*)raw_mem;
+        ret->addrs = (size_t*)&raw_mem[PAGESIZE];
+        ret->n_addrs = 0;
+        ret->capacity = g_default_capacity;
+        ret->is_aggregate = 0;
+        ret->ref_count = 0;
+    }
+
+    ret->n_addrs = 0;
+
+    // CAUTION: This loop assumes nobody is messing with retirees at just
+    // this moment!  If that assumption changes, take out the mutex.
+    addr_buffer_t *ab;
+    for (ab = g_first_retiree_buffer; ab != NULL; ab = ab->next) {
+        int i;
+        for (i = 0; i < ab->n_addrs; ++i) {
+            size_t addr = ab->addrs[i];
+            if (0 != (addr & 0x3)) continue;
+            ret->addrs[ret->n_addrs++] = addr;
+
+            // Special case: Maybe more dead ptrs than we have capacity.
+            // This should be exceedingly rare.  But if it happens, we'll
+            // be okay -- just count some false positive references.
+            if (ret->n_addrs >= ret->capacity) return ret;
+        }
+    }
+
+    return ret;
+}
+
 DEFINE_POOL_ALLOC(stack, STACKSIZE, NSTACKS, forkgc_alloc_mmap)
 
 void *forkscan_buffer_makestack (size_t *stacksize)

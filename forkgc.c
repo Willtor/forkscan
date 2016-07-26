@@ -168,13 +168,10 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
     addr_buffer_t *ret, *tmp;
     size_t n_addrs = 0;
     int list_count = 0;
-    size_t start, end;
-    size_t old_addrs;
 
     if (old) {
         n_addrs = old->n_addrs;
     }
-    old_addrs = n_addrs;
 
     tmp = data_list;
     do {
@@ -199,8 +196,6 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
         }
     }
 
-    start = forkscan_rdtsc();
-
     // Copy the addresses into the aggregate buffer.
     while (data_list) {
         memcpy(&ret->addrs[ret->n_addrs],
@@ -211,16 +206,13 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
     }
     assert(ret->n_addrs == n_addrs);
 
-    end = forkscan_rdtsc();
-    fprintf(stderr, "aggregation took %zu ms (%zu vals, %zu old, %d dl)\n",
-            end - start, n_addrs, old_addrs, list_count);
-
     return ret;
 }
 
 static void garbage_collect (addr_buffer_t *ab)
 {
     addr_buffer_t *working_data;
+    addr_buffer_t *deadrefs = NULL;
     int sig_count;
     int pipefd[2];
 
@@ -240,6 +232,7 @@ static void garbage_collect (addr_buffer_t *ab)
     start = forkscan_rdtsc();
     sig_count = forkgc_proc_signal(SIGFORKGC);
     while (g_received_signal < sig_count) pthread_yield();
+    deadrefs = forkscan_buffer_get_dead_references();
     child_pid = fork();
 
     if (child_pid == -1) {
@@ -249,11 +242,16 @@ static void garbage_collect (addr_buffer_t *ab)
         forkgc_util_sort(working_data->addrs, working_data->n_addrs);
         assert_monotonicity(working_data->addrs, working_data->n_addrs);
         generate_minimap(working_data);
+        if (deadrefs->n_addrs > 1) {
+            // No minimap for deadrefs.
+            forkgc_util_sort(deadrefs->addrs, deadrefs->n_addrs);
+            assert_monotonicity(deadrefs->addrs, deadrefs->n_addrs);
+        }
 
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
         close(pipefd[PIPE_READ]);
-        forkgc_child(working_data, pipefd[PIPE_WRITE]);
+        forkgc_child(working_data, deadrefs, pipefd[PIPE_WRITE]);
         close(pipefd[PIPE_WRITE]);
         exit(0);
     }
@@ -294,8 +292,6 @@ static void garbage_collect (addr_buffer_t *ab)
         g_uncollected_data->addrs[g_uncollected_data->n_addrs++] =
             PTR_MASK(working_data->addrs[i]);
     }
-
-    fprintf(stderr, "  unreclaimed: %d\n", g_uncollected_data->n_addrs);
 
     forkscan_buffer_unref_buffer(working_data);
 }
