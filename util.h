@@ -33,9 +33,9 @@ THE SOFTWARE.
 /*                         Defines, typedefs, etc.                          */
 /****************************************************************************/
 
-#define MALLOC(sz) je_malloc(sz)
-#define FREE(ptr) je_free(ptr)
-#define MALLOC_USABLE_SIZE(ptr) je_malloc_usable_size(ptr)
+#define MALLOC(sz) __forkscan_alloc(sz)
+#define FREE(ptr) __forkscan_free(ptr)
+#define MALLOC_USABLE_SIZE(ptr) __forkscan_usable_size(ptr)
 
 #define FOREACH_IN_THREAD_LIST(td, tl) do { \
     pthread_mutex_lock(&(tl)->lock);        \
@@ -167,5 +167,9 @@ int forkgc_util_compact (size_t *a, int length);
  * Get a timestamp in ms.
  */
 size_t forkscan_rdtsc ();
+
+extern void *(*__forkscan_alloc) (size_t);
+extern void (*__forkscan_free) (void *);
+extern size_t (*__forkscan_usable_size) (void *);
 
 #endif // !defined _UTIL_H_

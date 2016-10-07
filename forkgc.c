@@ -402,6 +402,18 @@ void *forkgc_thread (void *ignored)
 }
 
 /**
+ * Set the allocator for Forkscan to use: malloc, free, malloc_usable_size.
+ */
+void forkscan_set_allocator (void *(*alloc) (size_t),
+                             void (*dealloc) (void *),
+                             size_t (*usable_size) (void *))
+{
+    __forkscan_alloc = alloc;
+    __forkscan_free = dealloc;
+    __forkscan_usable_size = usable_size;
+}
+
+/**
  * Print program statistics to stdout.
  */
 void forkgc_print_statistics ()

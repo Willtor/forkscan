@@ -56,6 +56,13 @@ void forkgc_free (void *ptr);
  */
 extern void *forkgc_automalloc (size_t size);
 
+/**
+ * Set the allocator for Forkscan to use: malloc, free, malloc_usable_size.
+ */
+extern void *forkscan_set_allocator ((void *(*alloc) (size_t),
+                                      void (*dealloc) (void *),
+                                      size_t (*usable_size) (void *));
+
 #ifdef __cplusplus
 }
 #endif

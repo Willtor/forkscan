@@ -414,3 +414,8 @@ size_t forkscan_rdtsc ()
     ret += (size_t)(ts.tv_nsec / (1000 * 1000));
     return ret;
 }
+
+/* Allocator Functions */
+void *(*__forkscan_alloc) (size_t) = je_malloc;
+void (*__forkscan_free) (void *) = je_free;
+size_t (*__forkscan_usable_size) (void *) = je_malloc_usable_size;
