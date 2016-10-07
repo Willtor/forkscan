@@ -317,6 +317,7 @@ void forkgc_acknowledge_signal ()
     } else {
         // FIXME: No longer sweeping.
         assert(g_signal_mode == MODE_SWEEP);
+        assert(0);
         size_t old_counter = g_sweep_counter;
         __sync_fetch_and_add(&g_received_signal, 1);
         while (old_counter == g_sweep_counter) pthread_yield();
@@ -393,22 +394,6 @@ void *forkgc_thread (void *ignored)
         } else g_waiting_collects = 0;
 
         pthread_mutex_unlock(&g_gc_mutex);
-
-#ifndef NDEBUG
-        int n = 1;
-        addr_buffer_t *tmp = ab;
-        int b_unfreed_data = 0;
-        while (NULL != (tmp = tmp->next)) ++n;
-        free_t *f = forkgc_util_pop_free_list();
-        if (NULL != f) {
-            b_unfreed_data = 1;
-            forkgc_util_push_free_list(f);
-        }
-        forkgc_diagnostic("%d collects waiting%s.\n", n,
-                          b_unfreed_data != 0
-                          ? " (unfreed data)"
-                          : "");
-#endif
 
         garbage_collect(ab);
     }
