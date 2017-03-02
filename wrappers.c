@@ -129,6 +129,8 @@ int pthread_create (pthread_t *thread,
             forkgc_fatal("unable to set stack attributes.\n");
         }
         td->stack_is_ours = 1;
+    } else {
+        td->stack_is_ours = 0;
     }
 
     td->user_stack_low = (char*)stack;
