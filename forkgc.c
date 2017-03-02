@@ -69,18 +69,11 @@ static void __assert_monotonicity (size_t *a, int n, const char *f, int line)
 #endif
 
 typedef struct unref_config_t unref_config_t;
-typedef struct sweeper_work_t sweeper_work_t;
 
 struct unref_config_t
 {
     addr_buffer_t *ab;
     size_t min_val, max_val;
-};
-
-struct sweeper_work_t
-{
-    unref_config_t *unref_config;
-    int range_begin, range_end;
 };
 
 int g_frees_required = 8;
@@ -95,57 +88,14 @@ static pthread_mutex_t g_client_waiting_lock;
 static pthread_cond_t g_client_waiting_cond;
 
 static volatile int g_received_signal;
-static volatile enum { MODE_SNAPSHOT, MODE_SWEEP } g_signal_mode;
 static volatile size_t g_cleanup_counter;
-static volatile size_t g_sweep_counter;
 static enum { GC_NOT_WAITING,
-              GC_WAITING_FOR_WORK, 
-              GC_WAITING_FOR_SWEEPERS,
-              GC_DONT_WAIT_FOR_SWEEPERS } g_gc_waiting = GC_WAITING_FOR_WORK;
+              GC_WAITING_FOR_WORK } g_gc_waiting = GC_WAITING_FOR_WORK;
 static size_t g_scan_max;
 static double g_total_fork_time;
 static pid_t child_pid;
 
-static volatile int g_sweepers_working;
-static volatile int g_sweepers_remaining;
-static sweeper_work_t g_sweeper_work[MAX_SWEEPER_THREADS];
-
-static volatile size_t g_total_sweep_time = 0;
-
 size_t g_total_wait_time_ms = 0;
-
-static void address_range (sweeper_work_t *work)
-{
-    addr_buffer_t *ab = work->unref_config->ab;
-    free_t *free_list = NULL;
-    int free_list_length = 0;
-    int i;
-    for (i = work->range_begin; i < work->range_end; ++i) {
-        size_t addr = ab->addrs[i];
-        assert(addr != 0);
-        if (0 == (addr & 1)) {
-            // Memory to be freed.
-            free_t *ptr = (free_t*)addr;
-#ifndef NDEBUG
-            memset(ptr, 0xBB, MALLOC_USABLE_SIZE(ptr));
-#endif
-            ptr->next = free_list;
-            free_list = ptr;
-            ++free_list_length;
-            if (free_list_length >= MAX_FREE_LIST_LENGTH) {
-                // Free list has gotten long enough.  We give a free list a
-                // certain size that represents a sizable chunk for a thread
-                // to grab and gradually free.
-                forkgc_util_push_free_list(free_list);
-                free_list = NULL;
-                free_list_length = 0;
-            }
-        }
-    }
-    if (free_list) {
-        forkgc_util_push_free_list(free_list);
-    }
-}
 
 static void generate_minimap (addr_buffer_t *ab)
 {
@@ -227,7 +177,6 @@ static void garbage_collect (addr_buffer_t *ab)
     // Send out signals.  When everybody is waiting at the line, fork the
     // process for the snapshot.
     size_t start, end;
-    g_signal_mode = MODE_SNAPSHOT;
     g_received_signal = 0;
     start = forkscan_rdtsc();
     sig_count = forkgc_proc_signal(SIGFORKGC);
@@ -305,41 +254,12 @@ static void garbage_collect (addr_buffer_t *ab)
  */
 void forkgc_acknowledge_signal ()
 {
-    if (g_signal_mode == MODE_SNAPSHOT) {
-        size_t old_counter;
-        jmp_buf env; // Spilled registers.
+    size_t old_counter;
 
-        // Acknowledge the signal and wait for the snapshot to complete.
-        old_counter = g_cleanup_counter;
-        setjmp(env);
-        __sync_fetch_and_add(&g_received_signal, 1);
-        while (old_counter == g_cleanup_counter) pthread_yield();
-    } else {
-        // FIXME: No longer sweeping.
-        assert(g_signal_mode == MODE_SWEEP);
-        assert(0);
-        size_t old_counter = g_sweep_counter;
-        __sync_fetch_and_add(&g_received_signal, 1);
-        while (old_counter == g_sweep_counter) pthread_yield();
-
-        // Perform sweep.
-        int id = __sync_fetch_and_add(&g_sweepers_working, 1);
-        address_range(&g_sweeper_work[id]);
-        int done = __sync_fetch_and_sub(&g_sweepers_remaining, 1) - 1;
-
-        // See if we're the last one.
-        if (done == 0) {
-            // Last one out.  Signal the GC thread.
-            pthread_mutex_lock(&g_gc_mutex);
-            assert(g_gc_waiting != GC_WAITING_FOR_WORK);
-            if (g_gc_waiting == GC_WAITING_FOR_SWEEPERS) {
-                pthread_cond_signal(&g_gc_cond);
-            } else {
-                g_gc_waiting = GC_DONT_WAIT_FOR_SWEEPERS;
-            }
-            pthread_mutex_unlock(&g_gc_mutex);
-        }
-    }
+    // Acknowledge the signal and wait for the snapshot to complete.
+    old_counter = g_cleanup_counter;
+    __sync_fetch_and_add(&g_received_signal, 1);
+    while (old_counter == g_cleanup_counter) pthread_yield();
 }
 
 /**
@@ -439,8 +359,6 @@ void forkgc_print_statistics ()
     printf("ave-fork-time: %d\n",
            g_cleanup_counter == 0 ? 0
            : ((int)(g_total_fork_time / g_cleanup_counter)));
-    printf("ave-sweep-time: %zu\n", g_sweep_counter > 0
-           ? g_total_sweep_time / g_sweep_counter : 0);
     printf("wait-time: %zu\n", g_total_wait_time_ms);
 }
 
