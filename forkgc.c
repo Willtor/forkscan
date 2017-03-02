@@ -259,7 +259,7 @@ void forkgc_acknowledge_signal ()
     // Acknowledge the signal and wait for the snapshot to complete.
     old_counter = g_cleanup_counter;
     __sync_fetch_and_add(&g_received_signal, 1);
-    while (old_counter == g_cleanup_counter) pthread_yield();
+    while (old_counter == g_cleanup_counter) usleep(1);
 }
 
 /**
