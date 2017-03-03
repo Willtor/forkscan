@@ -22,7 +22,7 @@ FORKGC_OBJ = $(FORKGC_SRC:.c=.o)
 
 # The -fno-zero-initialized-in-bss flag appears to be busted.
 #CFLAGS = -fno-zero-initialized-in-bss
-CFLAGS := -O2
+CFLAGS := -O2 -DJEMALLOC_NO_DEMANGLE
 #CFLAGS += -DTIMING
 ifndef DEBUG
 	CFLAGS := $(CFLAGS) -DNDEBUG
