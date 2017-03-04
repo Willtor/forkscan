@@ -100,7 +100,7 @@ static int read_mapline (FILE *fp, mapline_t *m)
             // EOF.  Don't know why this happens, sometimes...
             return 0;
         }
-        forkgc_fatal("threadscan internal error: "
+        forkgc_fatal("forkscan internal error: "
                      "fscanf returned %d (expected 7)\n", n);
     } else {
         char c;
@@ -109,7 +109,7 @@ static int read_mapline (FILE *fp, mapline_t *m)
             m->path[0] = c;
             n = fscanf(fp, "%s", &m->path[1]); // FIXME: not safe.
             if (n != 1) {
-                forkgc_fatal("threadscan internal error: "
+                forkgc_fatal("forkscan internal error: "
                              "fscanf returned %d (expected 1)\n",
                              n);
             }
