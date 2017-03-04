@@ -2,10 +2,10 @@ CXX 	= gcc -g
 
 INSTALL_DIR = /usr/local
 
-FORKGC = libforkgc.so
-TARGETS	= $(FORKGC)
+FORKSCAN = libforkscan.so
+TARGETS	= $(FORKSCAN)
 
-FORKGC_SRC =	\
+FORKSCAN_SRC =	\
 	queue.c	\
 	env.c	\
 	wrappers.c	\
@@ -18,7 +18,7 @@ FORKGC_SRC =	\
 	child.c	\
 	threadscan.c
 
-FORKGC_OBJ = $(FORKGC_SRC:.c=.o)
+FORKSCAN_OBJ = $(FORKSCAN_SRC:.c=.o)
 
 # The -fno-zero-initialized-in-bss flag appears to be busted.
 #CFLAGS = -fno-zero-initialized-in-bss
@@ -34,16 +34,16 @@ all:	$(TARGETS)
 debug:
 	DEBUG=1 make all
 
-$(FORKGC): $(FORKGC_OBJ)
+$(FORKSCAN): $(FORKSCAN_OBJ)
 	$(CXX) $(CFLAGS) -shared -Wl,-soname,$@ -o $@ $^ $(LDFLAGS)
 
-$(INSTALL_DIR)/lib/$(FORKGC): $(FORKGC)
+$(INSTALL_DIR)/lib/$(FORKSCAN): $(FORKSCAN)
 	cp $< $@
 
-$(INSTALL_DIR)/include/forkgc.h: include/forkgc.h
+$(INSTALL_DIR)/include/forkscan.h: include/forkscan.h
 	cp $< $@
 
-install: $(INSTALL_DIR)/lib/$(FORKGC) $(INSTALL_DIR)/include/forkgc.h
+install: $(INSTALL_DIR)/lib/$(FORKSCAN) $(INSTALL_DIR)/include/forkscan.h
 	ldconfig
 
 clean:
