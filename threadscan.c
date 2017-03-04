@@ -25,7 +25,7 @@ THE SOFTWARE.
 #include <assert.h>
 #include "child.h"
 #include "env.h"
-#include "forkgc.h"
+#include "forkscan.h"
 #include <jemalloc/jemalloc.h>
 #include "proc.h"
 #include <pthread.h>

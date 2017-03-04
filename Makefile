@@ -5,17 +5,17 @@ INSTALL_DIR = /usr/local
 FORKSCAN = libforkscan.so
 TARGETS	= $(FORKSCAN)
 
-FORKSCAN_SRC =	\
-	queue.c	\
-	env.c	\
+FORKSCAN_SRC =		\
+	queue.c		\
+	env.c		\
 	wrappers.c	\
-	alloc.c	\
-	util.c	\
+	alloc.c		\
+	util.c		\
 	buffer.c	\
 	thread.c	\
-	proc.c	\
-	forkgc.c	\
-	child.c	\
+	proc.c		\
+	forkscan.c	\
+	child.c		\
 	threadscan.c
 
 FORKSCAN_OBJ = $(FORKSCAN_SRC:.c=.o)

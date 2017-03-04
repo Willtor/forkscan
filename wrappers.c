@@ -26,7 +26,7 @@ THE SOFTWARE.
 #include <assert.h>
 #include <dlfcn.h>
 #include "env.h"
-#include "forkgc.h"
+#include "forkscan.h"
 #include "proc.h"
 #include <pthread.h>
 #include <stdlib.h>

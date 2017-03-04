@@ -20,8 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#ifndef _FORKGC_H_
-#define _FORKGC_H_
+#ifndef _FORKSCAN_H_
+#define _FORKSCAN_H_
 
 #include "buffer.h"
 #include "child.h"
@@ -49,4 +49,4 @@ void *forkgc_thread (void *ignored);
  */
 void forkgc_print_statistics ();
 
-#endif
+#endif // !defined FORKSCAN
