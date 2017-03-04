@@ -1,63 +1,64 @@
-# The ThreadScan Memory Reclamation System
+# The Forkscan Memory Reclamation System
 
 ## Introduction
 
-ThreadScan is a library for performing automated memory reclamation on concurrent data structures in C and C++.
+Forkscan is a library for performing automated memory reclamation on concurrent data structures in C and C++.
 
-When one thread removes a node from a data structure, it isn't safe to call ***free*** if another thread may be accessing that node at the same time.  In place of ***free***, ThreadScan provides the ***threadscan_collect*** function which reclaims the memory on the node when no remaining threads hold references to it.
+When one thread removes a node from a data structure, it isn't safe to call ***free*** if another thread may be accessing that node at the same time.  In place of ***free***, Forkscan provides the ***forkscan_retire*** function which reclaims the memory on the node when no remaining threads hold references to it.
 
 ## Compilation
 
-At this time, the ThreadScan is only supported on Linux.  Use ***make*** to build the library.
+At this time, the Forkscan is only supported on Linux.  Forkscan does not allocate its own memory, but relies on a (runtime-configurable) allocator.  By default, it uses JE Malloc.  To install JE Malloc on a Debian/Ubuntu-like system, use:
+
+```
+% sudo apt-get install libjemalloc libjemalloc-dev
+```
+
+Use ***make*** to build the library.
 
 ```
 % make
 ```
 
-The library will appear as ***libthreadscan.so*** in the same directory as the source code.  If you want to install it on your system, use:
+The library will appear as ***libforkscan.so*** in the same directory as the source code.  If you want to install it on your system, use:
 
 ```
 % sudo make install
 ```
 
-The library will be installed at ***/usr/local/lib/libthreadscan.so*** and the header file will be installed at ***/usr/local/include/threadscan.h***.
+The library will be installed at ***/usr/local/lib/libforkscan.so*** and the header file will be installed at ***/usr/local/include/forkscan.h***.
 
 ## Usage
 
-ThreadScan can be used in another code base by calling the collection function from that code, and building the other package with the library on the command line.  To access the library routines from your code, include the threadscan header.
+Forkscan can be used in another code base by calling the collection function from that code, and building the other package with the library on the command line.  To access the library routines from your code, include the Forkscan header.
 
 ```
-#include <threadscan.h>
+#include <forkscan.h>
 ```
 
-The main collection routine is:
+Allocate memory using ***forkscan_malloc*** instead of ***malloc*** and ***forkscan_free*** instead of ***free***.  If the thread that wants to free memory is uncertain whether another thread may be using that memory, use ***forkscan_retire*** instead of ***free***.
 
-```
-void threadscan_collect (void *);
-```
+Retiring a pointer causes it to be tracked by the Forkscan runtime library, and it will be freed for reuse when Forkscan can prove that no thread has (or can acquire) a reference to it.
 
-***threadscan_collect*** can be used to automate memory reclamation on any pointer for which 1. the only remaining references exist on thread stacks or in active registers, and 2. ***threadscan_collect*** is not called multiple times on the same node.
+For example, a lock-free linked list swings the previous node's next pointer, and the node is no longer reachable from the root.  The thread may call ***forkscan_retire*** after it performs the CAS that physically removes the node and then drop the reference.
 
-For example, a lock-free linked list swings the previous node's next pointer, and the node is no longer reachable from the root.  Provided the pointer to the node has not been stored somewhere else, the node now meets the first criterion.  If the call to ***threadscan_collect*** only occurs after the CAS that removes the node, the second criterion is met, too.
+Note: Calling ***forkscan_retire*** on the same node multiple times will have the same consequences as calling ***free*** multiple times in single-threaded code.
 
 To include the library in your build, install it as above and add the library to the link line given to GCC.
 
 ```
--lthreadscan
+-lforkscan
 ```
 
-ThreadScan may also be used in semi-automated mode.  If a thread uses a buffer that is not on the stack, but is still functionally local to that one thread, ThreadScan can be configured to search that space, too.
+To replace the underlying allocator (JE Malloc), use the ***forkscan_set_allocator*** routine.  The function requires a ***malloc***, ***free***, and ***malloc_usable_size*** replacement functions.  ***malloc_usable_size*** is implemented by most allocators and returns the size (in bytes) of the given allocated block.  E.g.,
 
 ```
-void threadscan_register_local_block (void *addr, size_t size);
+forkscan_set_allocator(malloc, free, malloc_usable_size);
 ```
-
-Call this function with a pointer to the buffer and its size when the thread starts.  The identified region will be scanned along with the stack when reclamation occurs.
 
 ## Recommendations
 
-+ Use TC-Malloc or Hoard, which are known to be fast allocators in multi-threaded code.  TC-Malloc is available at https://code.google.com/p/gperftools/
-+ If you don't install ***libthreadscan.so***, or if you install it somewhere that requires you to use LD_PRELOAD, specify TC-Malloc, first, so that ThreadScan will find its ***free*** before that of the default Linux malloc (PT-Malloc).  Mixing ***malloc*** and ***free*** calls from different libraries can cause the program to crash.
++ Use JE Malloc, TC-Malloc, or Hoard, which are known to be fast allocators in multi-threaded code.  Mixing ***malloc*** and ***free*** calls from different libraries can cause the program to crash.
 
 ## Bugs/Questions/Contributions
 

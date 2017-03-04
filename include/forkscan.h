@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2015 ForkGC authors
+Copyright (c) 2015-2017 Forkscan authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -59,9 +59,9 @@ extern void *forkscan_automalloc (size_t size);
 /**
  * Set the allocator for Forkscan to use: malloc, free, malloc_usable_size.
  */
-extern void *forkscan_set_allocator (void *(*alloc) (size_t),
-                                     void (*dealloc) (void *),
-                                     size_t (*usable_size) (void *));
+extern void forkscan_set_allocator (void *(*alloc) (size_t),
+                                    void (*dealloc) (void *),
+                                    size_t (*usable_size) (void *));
 
 #ifdef __cplusplus
 }
