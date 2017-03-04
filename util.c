@@ -124,7 +124,7 @@ void forkgc_util_thread_data_cleanup (pthread_t tid)
     pthread_mutex_unlock(&g_staged_lock);
 
     if (td->ref_count > 0) {
-        forkgc_fatal("ForkGC: "
+        forkgc_fatal("Forkscan: "
                      "detected data race on exiting thread.\n");
     }
 
@@ -281,7 +281,7 @@ int forkgc_diagnostic (const char *format, ...)
 
     assert(format);
 
-    fprintf(stderr, "ForkGC diagnostic: ");
+    fprintf(stderr, "Forkscan diagnostic: ");
     va_start(arg, format);
     ret = vfprintf(stderr, format, arg);
     va_end(arg);
@@ -295,7 +295,7 @@ void forkgc_fatal (const char *format, ...)
 
     assert(format);
 
-    printf("ForkGC fatal: ");
+    printf("Forkscan fatal: ");
     va_start(arg, format);
     vfprintf(stderr, format, arg);
     va_end(arg);

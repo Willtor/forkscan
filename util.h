@@ -107,7 +107,7 @@ struct thread_data_t {
     char *user_stack_low;     // Low address on the user stack.
     char *user_stack_high;    // Actually, just the high address to lock.
 
-    int stack_is_ours;        // Whether ForkGC allocated the stack.
+    int stack_is_ours;        // Whether Forkscan allocated the stack.
     int is_active;            // The thread is running user code.
 
     queue_t ptr_list;         // Local list of pointers to be collected.

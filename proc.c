@@ -68,7 +68,7 @@ static thread_list_t thread_list = { (thread_data_t*)0x1,
 
 /**
  * Return the list of thread metadata objects for all the threads known to
- * ForkGC.
+ * Forkscan.
  */
 thread_list_t *forkgc_proc_get_thread_list () { return &thread_list; }
 
@@ -186,7 +186,7 @@ void forkgc_proc_map_iterate (int (*f) (void *arg,
 /****************************************************************************/
 
 /**
- * Threads call this to register themselves with ForkGC when they start.
+ * Threads call this to register themselves with Forkscan when they start.
  */
 void forkgc_proc_add_thread_data (thread_data_t *td)
 {
@@ -198,7 +198,7 @@ void forkgc_proc_add_thread_data (thread_data_t *td)
 
 /**
  * Threads call this when they are going away.  It unregisters them with the
- * ForkGC.
+ * Forkscan.
  */
 void forkgc_proc_remove_thread_data (thread_data_t *td)
 {

@@ -32,7 +32,7 @@ THE SOFTWARE.
 #include "util.h"
 
 /**
- * Thread-local reference to ForkGC's per-thread data.
+ * Thread-local reference to Forkscan's per-thread data.
  */
 __thread thread_data_t *forkgc_local_td;
 
@@ -44,7 +44,7 @@ thread_data_t *forkgc_thread_get_td () { return forkgc_local_td; }
 /**
  * Base routine of all threads that are created in the process.  The wrapper
  * for pthread_create() will call this function instead of the one the user
- * requested.  This allows us to hook each thread into the ForkGC system as
+ * requested.  This allows us to hook each thread into the Forkscan system as
  * it is made.  Then we call the user routine.
  */
 void *forkgc_thread_base (void *arg)

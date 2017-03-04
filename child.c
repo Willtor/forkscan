@@ -381,15 +381,15 @@ static int collect_ranges (void *p,
         return 1;
     }
     if (is_lib("libc", path)) {
-        // Part of the ForkGC module memory.  It's clean.
+        // Part of the Forkscan module memory.  It's clean.
         return 1;
     }
     if (is_lib("libdl", path)) {
-        // Part of the ForkGC module memory.  It's clean.
+        // Part of the Forkscan module memory.  It's clean.
         return 1;
     }
     if (is_lib("libforkgc", path)) {
-        // Part of the ForkGC module memory.  It's clean.
+        // Part of the Forkscan module memory.  It's clean.
         return 1;
     }
     if (bits[3] == 's') {

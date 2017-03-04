@@ -26,7 +26,7 @@ THE SOFTWARE.
 #include <stddef.h>
 
 /**
- * Queues, in ForkGC, are circular buffers that are thread-safe,
+ * Queues, in Forkscan, are circular buffers that are thread-safe,
  * linearizable data structures, assuming single-reader, single-writer
  * usage.  A queue is initialized given the struct and a buffer that will
  * be used to store the values.

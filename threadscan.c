@@ -149,7 +149,7 @@ static void register_signal_handlers ()
 /****************************************************************************/
 
 /**
- * Allocate memory of the specified size from ForkGC's pool and return it.
+ * Allocate memory of the specified size from Forkscan's pool and return it.
  * This memory is untracked by the system.
  */
 __attribute__((visibility("default")))
@@ -174,7 +174,7 @@ void *forkscan_malloc (size_t size)
 }
 
 /**
- * Retire a pointer allocated by ForkGC so that it will be free'd for reuse
+ * Retire a pointer allocated by Forkscan so that it will be free'd for reuse
  * when no remaining references to it exist.
  */
 __attribute__((visibility("default")))
@@ -206,7 +206,7 @@ void forkscan_retire (void *ptr)
 }
 
 /**
- * Free a pointer allocated by ForkGC.  The memory may be immediately reused,
+ * Free a pointer allocated by Forkscan.  The memory may be immediately reused,
  * so if there is any possibility another thread may know about this memory
  * and might read from it, forkscan_retire() should be used instead.
  */
