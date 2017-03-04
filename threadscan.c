@@ -153,7 +153,7 @@ static void register_signal_handlers ()
  * This memory is untracked by the system.
  */
 __attribute__((visibility("default")))
-void *forkgc_malloc (size_t size)
+void *forkscan_malloc (size_t size)
 {
     void *p;
     g_in_malloc = 1;
@@ -178,7 +178,7 @@ void *forkgc_malloc (size_t size)
  * when no remaining references to it exist.
  */
 __attribute__((visibility("default")))
-void forkgc_retire (void *ptr)
+void forkscan_retire (void *ptr)
 {
     if (NULL == ptr) {
         forkgc_diagnostic("Tried to collect NULL.\n");
@@ -208,10 +208,10 @@ void forkgc_retire (void *ptr)
 /**
  * Free a pointer allocated by ForkGC.  The memory may be immediately reused,
  * so if there is any possibility another thread may know about this memory
- * and might read from it, forkgc_retire() should be used instead.
+ * and might read from it, forkscan_retire() should be used instead.
  */
 __attribute__((visibility("default")))
-void forkgc_free (void *ptr)
+void forkscan_free (void *ptr)
 {
     g_in_malloc = 1;
     FREE(ptr);
@@ -229,9 +229,9 @@ void forkgc_free (void *ptr)
  * on it.
  */
 __attribute__((visibility("default")))
-void *forkgc_automalloc (size_t size)
+void *forkscan_automalloc (size_t size)
 {
-    void *p = forkgc_malloc(size);
-    forkgc_retire(p);
+    void *p = forkscan_malloc(size);
+    forkscan_retire(p);
     return p;
 }

@@ -20,8 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#ifndef _FORKGC_H_
-#define _FORKGC_H_
+#ifndef _FORKSCAN_H_
+#define _FORKSCAN_H_
 
 #ifdef __cplusplus
 #include <cstddef.h>
@@ -31,30 +31,30 @@ extern "C" {
 #endif
 
 /**
- * Allocate memory of the specified size from ForkGC's pool and return it.
+ * Allocate memory of the specified size from Forkscan's pool and return it.
  * This memory is untracked by the system.
  */
-void *forkgc_malloc (size_t size);
+void *forkscan_malloc (size_t size);
 
 /**
- * Retire a pointer allocated by ForkGC so that it will be free'd for reuse
+ * Retire a pointer allocated by Forkscan so that it will be free'd for reuse
  * when no remaining references to it exist.
  */
-void forkgc_retire (void *ptr);
+void forkscan_retire (void *ptr);
 
 /**
- * Free a pointer allocated by ForkGC.  The memory may be immediately reused,
+ * Free a pointer allocated by Forkscan.  The memory may be immediately reused,
  * so if there is any possibility another thread may know about this memory
- * and might read from it, forkgc_retire() should be used instead.
+ * and might read from it, forkscan_retire() should be used instead.
  */
-void forkgc_free (void *ptr);
+void forkscan_free (void *ptr);
 
 /**
  * Allocate a buffer of "size" bytes and return a pointer to it.  This memory
  * will be tracked by the garbage collector, so free() should never be called
  * on it.
  */
-extern void *forkgc_automalloc (size_t size);
+extern void *forkscan_automalloc (size_t size);
 
 /**
  * Set the allocator for Forkscan to use: malloc, free, malloc_usable_size.
@@ -67,4 +67,4 @@ extern void *forkscan_set_allocator (void *(*alloc) (size_t),
 }
 #endif
 
-#endif // !defined _FORKGC_H_
+#endif // !defined _FORKSCAN_H_
