@@ -61,7 +61,7 @@ addr_buffer_t *forkscan_make_reclaimer_buffer ()
     }
 
     if (0 == g_default_capacity) {
-        g_default_capacity = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
+        g_default_capacity = g_forkscan_ptrs_per_thread * MAX_THREAD_COUNT;
     }
     size_t sz = g_default_capacity * sizeof(size_t) + PAGESIZE;
     char *raw_mem = forkscan_alloc_mmap(sz, "reclaimer");

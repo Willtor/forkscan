@@ -56,45 +56,45 @@ struct queue_t {
 /**
  * Initialize a queue object.  Queues are implemented as circular buffers.
  */
-void forkgc_queue_init (queue_t *q, size_t *buf, size_t capacity);
+void forkscan_queue_init (queue_t *q, size_t *buf, size_t capacity);
 
 /**
  * Return 1 if the queue is empty, zero otherwise.
  */
-int forkgc_queue_is_empty (queue_t *q);
+int forkscan_queue_is_empty (queue_t *q);
 
 /**
  * Return 1 if the queue is full, zero otherwise.
  */
-int forkgc_queue_is_full (queue_t *q);
+int forkscan_queue_is_full (queue_t *q);
 
 /**
  * Return the number of empty slots in the queue.
  */
-int forkgc_queue_available (queue_t *q);
+int forkscan_queue_available (queue_t *q);
 
 /**
  * Push a value onto the head of the queue.  Caller must verify there is
  * space on the queue.
  */
-void forkgc_queue_push (queue_t *q, size_t value);
+void forkscan_queue_push (queue_t *q, size_t value);
 
 /**
  * Remove a value from the tail of the queue and return it.
  */
-size_t forkgc_queue_pop (queue_t *q);
+size_t forkscan_queue_pop (queue_t *q);
 
 /**
  * Push a block of values onto the queue of count "len".  Caller must verify
  * there is space on the queue.
  */
-void forkgc_queue_push_bulk (queue_t *q, size_t values[], size_t len);
+void forkscan_queue_push_bulk (queue_t *q, size_t values[], size_t len);
 
 /**
  * Pop a block of values from the queue, up to "len" in count.  The values
  * buffer is populated with the removed values.  The total number of values
  * popped is returned.
  */
-int forkgc_queue_pop_bulk (size_t values[], size_t len, queue_t *q);
+int forkscan_queue_pop_bulk (size_t values[], size_t len, queue_t *q);
 
 #endif  // !defined _QUEUE_H_

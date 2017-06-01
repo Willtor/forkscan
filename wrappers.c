@@ -139,7 +139,7 @@ int pthread_create (pthread_t *thread,
     td->wait_time_ms = 0;
 
     // Insert the metadata into the global structure.
-    forkgc_proc_add_thread_data(td);
+    forkscan_proc_add_thread_data(td);
 
     // Try to create the thread.
     ret = orig_pthread_create(thread, &real_attr,
@@ -203,7 +203,7 @@ static void *main_thunk (void *arg)
     int ret;
     main_args_t *main_args = (main_args_t*)arg;
     ret = orig_main(main_args->argc, main_args->argv, main_args->env);
-    if (g_forkgc_report_statistics) {
+    if (g_forkscan_report_statistics) {
         forkgc_print_statistics();
     }
     exit(ret);
@@ -219,11 +219,11 @@ static int main_replacement (int argc, char **argv, char **env)
     }
     td->user_routine = main_thunk;
     td->user_arg = &main_args;
-    forkgc_proc_stack_from_addr(&stack_data, (size_t)&stack_data);
+    forkscan_proc_stack_from_addr(&stack_data, (size_t)&stack_data);
     td->user_stack_low = (char*)stack_data.low;
 
     // Insert the metadata into the global structure.
-    forkgc_proc_add_thread_data(td);
+    forkscan_proc_add_thread_data(td);
 
     forkscan_thread_base(td);
     assert(0); // Should not return.  It should die in main_thunk().

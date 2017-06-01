@@ -34,7 +34,7 @@ THE SOFTWARE.
 /**
  * Initialize a queue object.  Queues are implemented as circular buffers.
  */
-void forkgc_queue_init (queue_t *q, size_t *buf, size_t capacity)
+void forkscan_queue_init (queue_t *q, size_t *buf, size_t capacity)
 {
     q->e = buf;
     q->capacity = capacity;
@@ -45,7 +45,7 @@ void forkgc_queue_init (queue_t *q, size_t *buf, size_t capacity)
 /**
  * Return 1 if the queue is empty, zero otherwise.
  */
-int forkgc_queue_is_empty (queue_t *q)
+int forkscan_queue_is_empty (queue_t *q)
 {
     assert(q->idx_head < q->idx_tail);
     return q->idx_head + q->capacity == q->idx_tail;
@@ -54,7 +54,7 @@ int forkgc_queue_is_empty (queue_t *q)
 /**
  * Return 1 if the queue is full, zero otherwise.
  */
-int forkgc_queue_is_full (queue_t *q)
+int forkscan_queue_is_full (queue_t *q)
 {
     assert(q->idx_head < q->idx_tail);
     return q->idx_head + 1 >= q->idx_tail ? 1 : 0;
@@ -63,7 +63,7 @@ int forkgc_queue_is_full (queue_t *q)
 /**
  * Return the number of empty slots in the queue.
  */
-int forkgc_queue_available (queue_t *q)
+int forkscan_queue_available (queue_t *q)
 {
     assert(q->idx_head < q->idx_tail);
     // We can use an int since the two values are actually very close.
@@ -76,7 +76,7 @@ int forkgc_queue_available (queue_t *q)
  * Push a value onto the head of the queue.  Caller must verify there is
  * space on the queue.
  */
-void forkgc_queue_push (queue_t *q, size_t value)
+void forkscan_queue_push (queue_t *q, size_t value)
 {
     q->e[INDEXIFY(q->idx_head, q->capacity)] = value;
     ++q->idx_head;
@@ -86,7 +86,7 @@ void forkgc_queue_push (queue_t *q, size_t value)
 /**
  * Remove a value from the tail of the queue and return it.
  */
-size_t forkgc_queue_pop (queue_t *q)
+size_t forkscan_queue_pop (queue_t *q)
 {
     size_t ret = q->e[INDEXIFY(q->idx_tail, q->capacity)];
     ++q->idx_tail;
@@ -97,7 +97,7 @@ size_t forkgc_queue_pop (queue_t *q)
  * Push a block of values onto the queue of count "len".  Caller must verify
  * there is space on the queue.
  */
-void forkgc_queue_push_bulk (queue_t *q, size_t values[], size_t len)
+void forkscan_queue_push_bulk (queue_t *q, size_t values[], size_t len)
 {
     // Perform a whole bunch of reads up-front in case this is a high-
     // contention operation.
@@ -131,7 +131,7 @@ void forkgc_queue_push_bulk (queue_t *q, size_t values[], size_t len)
  * buffer is populated with the removed values.  The return value is the
  * count of values that were pop'd.
  */
-int forkgc_queue_pop_bulk (size_t values[], size_t len, queue_t *q)
+int forkscan_queue_pop_bulk (size_t values[], size_t len, queue_t *q)
 {
     size_t idx_head = q->idx_head;    // Cache idx_head which may be changing.
     size_t size =

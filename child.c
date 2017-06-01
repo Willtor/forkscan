@@ -388,7 +388,7 @@ static int collect_ranges (void *p,
         // Part of the Forkscan module memory.  It's clean.
         return 1;
     }
-    if (is_lib("libforkgc", path)) {
+    if (is_lib("libforkscan", path)) {
         // Part of the Forkscan module memory.  It's clean.
         return 1;
     }
@@ -433,14 +433,14 @@ static int collect_ranges (void *p,
     return 1;
 }
 
-void forkgc_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
+void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
 {
     assert(ab);
     assert(deadrefs);
 
     // Scan memory for references.
     g_bytes_to_scan = 0;
-    forkgc_proc_map_iterate(collect_ranges, NULL);
+    forkscan_proc_map_iterate(collect_ranges, NULL);
     ab->completed_children = 0;
     ab->cutoff_reached = 0;
 

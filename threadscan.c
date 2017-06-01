@@ -63,19 +63,19 @@ static __thread int g_waiting_to_fork = 0;
 static void generate_working_pointers_list (addr_buffer_t *ab)
 {
     int n = 0;
-    thread_list_t *thread_list = forkgc_proc_get_thread_list();
+    thread_list_t *thread_list = forkscan_proc_get_thread_list();
     thread_data_t *td;
 
     // Add the pointers from each of the individual thread buffers.
     FOREACH_IN_THREAD_LIST(td, thread_list)
         assert(td);
-        n += forkgc_queue_pop_bulk(&ab->addrs[n],
+        n += forkscan_queue_pop_bulk(&ab->addrs[n],
                                    g_config.max_ptrs - n,
                                    &td->ptr_list);
     ENDFOREACH_IN_THREAD_LIST(td, thread_list);
 
     ab->n_addrs = n;
-    assert(!forkgc_queue_is_full(&forkscan_thread_get_td()->ptr_list));
+    assert(!forkscan_queue_is_full(&forkscan_thread_get_td()->ptr_list));
 }
 
 static void become_reclaimer ()
@@ -137,7 +137,7 @@ static void register_signal_handlers ()
         forkscan_fatal("Unable to register signal handler.\n");
     }
 
-    g_config.max_ptrs = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
+    g_config.max_ptrs = g_forkscan_ptrs_per_thread * MAX_THREAD_COUNT;
 
     // Calculate reserved space for stored addresses.
     g_config.working_buffer_sz = g_config.max_ptrs * sizeof(size_t)
@@ -186,8 +186,8 @@ void forkscan_retire (void *ptr)
     }
 
     thread_data_t *td = forkscan_thread_get_td();
-    forkgc_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
-    if (forkgc_queue_is_full(&td->ptr_list)) {
+    forkscan_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
+    if (forkscan_queue_is_full(&td->ptr_list)) {
         size_t start, end;
         size_t n_loops = 0;
 
@@ -199,7 +199,7 @@ void forkscan_retire (void *ptr)
             forkscan_thread_cleanup_try_acquire()
                 ? become_reclaimer() // this will release the cleanup lock.
                 : yield(n_loops);
-        } while (forkgc_queue_is_full(&td->ptr_list));
+        } while (forkscan_queue_is_full(&td->ptr_list));
         end = forkscan_rdtsc();
         td->wait_time_ms += end - start;
     }

@@ -179,7 +179,7 @@ static void garbage_collect (addr_buffer_t *ab)
     size_t start, end;
     g_received_signal = 0;
     start = forkscan_rdtsc();
-    sig_count = forkgc_proc_signal(SIGFORKGC);
+    sig_count = forkscan_proc_signal(SIGFORKGC);
     while (g_received_signal < sig_count) pthread_yield();
     deadrefs = forkscan_buffer_get_dead_references();
     child_pid = fork();
@@ -200,7 +200,7 @@ static void garbage_collect (addr_buffer_t *ab)
         // Child: Scan memory, pass pointers back to the parent to free, pass
         // remaining pointers back, and exit.
         close(pipefd[PIPE_READ]);
-        forkgc_child(working_data, deadrefs, pipefd[PIPE_WRITE]);
+        forkscan_child(working_data, deadrefs, pipefd[PIPE_WRITE]);
         close(pipefd[PIPE_WRITE]);
         exit(0);
     }

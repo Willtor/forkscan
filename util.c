@@ -66,15 +66,15 @@ static thread_data_t *g_td_staged_to_free = NULL;
 // hidden.  As a consequence, there is no copy-on-write cost for those
 // pages.
 DEFINE_POOL_ALLOC(threaddata, MEMBLOCK_SIZE, 8, forkscan_alloc_mmap_shared)
-DEFINE_POOL_ALLOC(ptrlist, (g_forkgc_ptrs_per_thread * sizeof(size_t)), 8,
+DEFINE_POOL_ALLOC(ptrlist, (g_forkscan_ptrs_per_thread * sizeof(size_t)), 8,
                   forkscan_alloc_mmap_shared)
 
 thread_data_t *forkscan_util_thread_data_new ()
 {
     thread_data_t *td = (thread_data_t*)pool_alloc_threaddata();
     size_t *local_list = (size_t*)pool_alloc_ptrlist();
-    forkgc_queue_init(&td->ptr_list, local_list,
-                      g_forkgc_ptrs_per_thread);
+    forkscan_queue_init(&td->ptr_list, local_list,
+                        g_forkscan_ptrs_per_thread);
     td->local_block.low = td->local_block.high = 0;
     td->ref_count = 1;
     td->retiree_buffer = NULL;

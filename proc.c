@@ -70,7 +70,7 @@ static thread_list_t thread_list = { (thread_data_t*)0x1,
  * Return the list of thread metadata objects for all the threads known to
  * Forkscan.
  */
-thread_list_t *forkgc_proc_get_thread_list () { return &thread_list; }
+thread_list_t *forkscan_proc_get_thread_list () { return &thread_list; }
 
 /**
  * Path to the maps file for this process: /proc/<pid>/maps
@@ -127,7 +127,7 @@ static int read_mapline (FILE *fp, mapline_t *m)
  * Given an address, find the bounds of the stack on which it lives.  The
  * mem_range is populated based on the results.
  */
-void forkgc_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
+void forkscan_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
 {
     FILE *fp;
     mapline_t mapline;
@@ -153,12 +153,12 @@ void forkgc_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
     fclose(fp);
 }
 
-void forkgc_proc_map_iterate (int (*f) (void *arg,
-                                            size_t begin,
-                                            size_t end,
-                                            const char *bits,
-                                            const char *path),
-                                  void *user_arg)
+void forkscan_proc_map_iterate (int (*f) (void *arg,
+                                          size_t begin,
+                                          size_t end,
+                                          const char *bits,
+                                          const char *path),
+                                void *user_arg)
 {
     FILE *fp;
     mapline_t mapline;
@@ -188,7 +188,7 @@ void forkgc_proc_map_iterate (int (*f) (void *arg,
 /**
  * Threads call this to register themselves with Forkscan when they start.
  */
-void forkgc_proc_add_thread_data (thread_data_t *td)
+void forkscan_proc_add_thread_data (thread_data_t *td)
 {
     // The list initialization will only actually happen if this is the
     // first time.
@@ -200,7 +200,7 @@ void forkgc_proc_add_thread_data (thread_data_t *td)
  * Threads call this when they are going away.  It unregisters them with the
  * Forkscan.
  */
-void forkgc_proc_remove_thread_data (thread_data_t *td)
+void forkscan_proc_remove_thread_data (thread_data_t *td)
 {
     forkscan_util_thread_list_remove(&thread_list, td);
 }
@@ -209,7 +209,7 @@ void forkgc_proc_remove_thread_data (thread_data_t *td)
  * Send a signal to all threads in the process (except the calling thread)
  * using pthread_kill().
  */
-int forkgc_proc_signal_all_except (int sig, thread_data_t *except)
+int forkscan_proc_signal_all_except (int sig, thread_data_t *except)
 {
     int signal_count = 0;
     thread_data_t *td;
@@ -237,7 +237,7 @@ int forkgc_proc_signal_all_except (int sig, thread_data_t *except)
 /**
  * Send a signal to all threads in the process using pthread_kill().
  */
-int forkgc_proc_signal (int sig)
+int forkscan_proc_signal (int sig)
 {
     int signal_count = 0;
     thread_data_t *td;
@@ -265,7 +265,7 @@ int forkgc_proc_signal (int sig)
  * Wait for all threads that are trying to help out to discover the
  * current timestamp.
  */
-void forkgc_proc_wait_for_timestamp (size_t curr)
+void forkscan_proc_wait_for_timestamp (size_t curr)
 {
     thread_data_t *td;
     FOREACH_IN_THREAD_LIST(td, &thread_list)

@@ -98,7 +98,7 @@ void forkscan_thread_cleanup ()
     thread_data_t *td = forkscan_local_td;
     assert(td);
     td->is_active = 0;
-    forkgc_proc_remove_thread_data(td);
+    forkscan_proc_remove_thread_data(td);
     extern size_t g_total_wait_time_ms; // FIXME: Bad, bad, bad!
     __sync_fetch_and_add(&g_total_wait_time_ms, td->wait_time_ms);
     forkscan_util_thread_data_decr_ref(td);
@@ -115,7 +115,7 @@ int forkscan_thread_signal_all_but_me (int sig)
     me = forkscan_local_td;
     assert(me);
 
-    return forkgc_proc_signal_all_except(sig, me);
+    return forkscan_proc_signal_all_except(sig, me);
 }
 
 /**
@@ -194,7 +194,7 @@ int forkscan_thread_cleanup_try_acquire ()
 
     // We have the critical section and are the new cleanup thread.  Wait
     // for all threads that are trying to "help out" to acknowledge this.
-    forkgc_proc_wait_for_timestamp(TIMESTAMP(attempt));
+    forkscan_proc_wait_for_timestamp(TIMESTAMP(attempt));
     return 1;
 }
 
