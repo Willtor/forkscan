@@ -134,7 +134,7 @@ static void register_signal_handlers ()
     /* We signal threads to get them to stop while we prepare a snapshot
        on the cleanup thread. */
     if (signal(SIGFORKGC, signal_handler) == SIG_ERR) {
-        forkgc_fatal("Unable to register signal handler.\n");
+        forkscan_fatal("Unable to register signal handler.\n");
     }
 
     g_config.max_ptrs = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
@@ -181,7 +181,7 @@ __attribute__((visibility("default")))
 void forkscan_retire (void *ptr)
 {
     if (NULL == ptr) {
-        forkgc_diagnostic("Tried to collect NULL.\n");
+        forkscan_diagnostic("Tried to collect NULL.\n");
         return;
     }
 

@@ -92,14 +92,14 @@ int pthread_create (pthread_t *thread,
 
     if (MAX_THREAD_COUNT < __sync_fetch_and_add(&g_thread_count, 1)) {
         // Don't overflow buffers.
-        forkgc_fatal("Exceeded maximum thread count (%d).\n",
-                         MAX_THREAD_COUNT);
+        forkscan_fatal("Exceeded maximum thread count (%d).\n",
+                       MAX_THREAD_COUNT);
     }
 
     // Wrap the user data.
-    td = forkgc_util_thread_data_new();
+    td = forkscan_util_thread_data_new();
     if (NULL == td) {
-        forkgc_fatal("Out of memory.\n");
+        forkscan_fatal("Out of memory.\n");
     }
     td->user_routine = start_routine;
     td->user_arg = arg;
@@ -111,7 +111,7 @@ int pthread_create (pthread_t *thread,
     if (NULL == attr) {
         ret = pthread_attr_init(&real_attr);
         if (0 != ret) {
-            forkgc_fatal("could not create thread.\n");
+            forkscan_fatal("could not create thread.\n");
         }
     } else {
         real_attr = *attr;
@@ -119,14 +119,14 @@ int pthread_create (pthread_t *thread,
 
     ret = pthread_attr_getstack(&real_attr, &stack, &stacksize);
     if (0 != ret) {
-        forkgc_fatal("unable to get stack attributes.\n");
+        forkscan_fatal("unable to get stack attributes.\n");
     }
 
     if (NULL == stack) {
         stack = forkscan_buffer_makestack(&stacksize);
         ret = pthread_attr_setstack(&real_attr, stack, stacksize);
         if (0 != ret) {
-            forkgc_fatal("unable to set stack attributes.\n");
+            forkscan_fatal("unable to set stack attributes.\n");
         }
         td->stack_is_ours = 1;
     } else {
@@ -152,7 +152,7 @@ int pthread_create (pthread_t *thread,
         if (td->stack_is_ours) {
             forkscan_buffer_freestack(stack);
         }
-        forkgc_util_thread_data_free(td);
+        forkscan_util_thread_data_free(td);
     }
 
     return ret;
@@ -186,7 +186,7 @@ int pthread_join (pthread_t thread, void **retval)
 {
     assert(orig_pthread_join);
     int ret = orig_pthread_join(thread, retval);
-    forkgc_util_thread_data_cleanup(thread);
+    forkscan_util_thread_data_cleanup(thread);
     return ret;
 }
 
@@ -211,11 +211,11 @@ static void *main_thunk (void *arg)
 
 static int main_replacement (int argc, char **argv, char **env)
 {
-    thread_data_t *td = forkgc_util_thread_data_new();
+    thread_data_t *td = forkscan_util_thread_data_new();
     mem_range_t stack_data;
     main_args_t main_args = { argc, argv, env };
     if (NULL == td) {
-        forkgc_fatal("Out of memory.\n");
+        forkscan_fatal("Out of memory.\n");
     }
     td->user_routine = main_thunk;
     td->user_arg = &main_args;
@@ -241,7 +241,7 @@ int __libc_start_main(int (*main) (int, char **, char **),
     pthread_t tid;
     int ret = orig_pthread_create(&tid, NULL, forkgc_thread, NULL);
     if (0 != ret) {
-        forkgc_fatal("Unable to start garbage collector.\n");
+        forkscan_fatal("Unable to start garbage collector.\n");
         // Does not return.
     }
 

@@ -134,34 +134,34 @@ struct thread_list_t {
     unsigned int count; // Number of threads.
 };
 
-thread_data_t *forkgc_util_thread_data_new ();
-void forkgc_util_thread_data_decr_ref (thread_data_t *td);
-void forkgc_util_thread_data_free (thread_data_t *td);
-void forkgc_util_thread_data_cleanup (pthread_t tid);
+thread_data_t *forkscan_util_thread_data_new ();
+void forkscan_util_thread_data_decr_ref (thread_data_t *td);
+void forkscan_util_thread_data_free (thread_data_t *td);
+void forkscan_util_thread_data_cleanup (pthread_t tid);
 
-void forkgc_util_thread_list_init (thread_list_t *tl);
-void forkgc_util_thread_list_add (thread_list_t *tl, thread_data_t *td);
-void forkgc_util_thread_list_remove (thread_list_t *tl, thread_data_t *td);
-thread_data_t *forkgc_util_thread_list_find (thread_list_t *tl,
-                                             size_t addr);
-void forkgc_util_push_free_list (free_t *free_list);
-free_t *forkgc_util_pop_free_list ();
+void forkscan_util_thread_list_init (thread_list_t *tl);
+void forkscan_util_thread_list_add (thread_list_t *tl, thread_data_t *td);
+void forkscan_util_thread_list_remove (thread_list_t *tl, thread_data_t *td);
+thread_data_t *forkscan_util_thread_list_find (thread_list_t *tl,
+                                               size_t addr);
+void forkscan_util_push_free_list (free_t *free_list);
+free_t *forkscan_util_pop_free_list ();
 void forkscan_util_free_ptrs (thread_data_t *td);
 
 /****************************************************************************/
 /*                              I/O functions.                              */
 /****************************************************************************/
 
-int forkgc_diagnostic (const char *format, ...);
-void forkgc_fatal (const char *format, ...);
+int forkscan_diagnostic (const char *format, ...);
+void forkscan_fatal (const char *format, ...);
 
 /****************************************************************************/
 /*                              Sort utility.                               */
 /****************************************************************************/
 
-void forkgc_util_randomize (size_t *addrs, int n);
-void forkgc_util_sort (size_t *a, int length);
-int forkgc_util_compact (size_t *a, int length);
+void forkscan_util_randomize (size_t *addrs, int n);
+void forkscan_util_sort (size_t *a, int length);
+int forkscan_util_compact (size_t *a, int length);
 
 /**
  * Get a timestamp in ms.

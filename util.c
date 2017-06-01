@@ -69,7 +69,7 @@ DEFINE_POOL_ALLOC(threaddata, MEMBLOCK_SIZE, 8, forkgc_alloc_mmap_shared)
 DEFINE_POOL_ALLOC(ptrlist, (g_forkgc_ptrs_per_thread * sizeof(size_t)), 8,
                   forkgc_alloc_mmap_shared)
 
-thread_data_t *forkgc_util_thread_data_new ()
+thread_data_t *forkscan_util_thread_data_new ()
 {
     thread_data_t *td = (thread_data_t*)pool_alloc_threaddata();
     size_t *local_list = (size_t*)pool_alloc_ptrlist();
@@ -81,7 +81,7 @@ thread_data_t *forkgc_util_thread_data_new ()
     return td;
 }
 
-void forkgc_util_thread_data_decr_ref (thread_data_t *td)
+void forkscan_util_thread_data_decr_ref (thread_data_t *td)
 {
     if (0 == __sync_fetch_and_sub(&td->ref_count, 1) - 1) {
         pthread_mutex_lock(&g_staged_lock);
@@ -91,7 +91,7 @@ void forkgc_util_thread_data_decr_ref (thread_data_t *td)
     }
 }
 
-void forkgc_util_thread_data_free (thread_data_t *td)
+void forkscan_util_thread_data_free (thread_data_t *td)
 {
     assert(td);
     assert(td->ref_count == 0);
@@ -103,7 +103,7 @@ void forkgc_util_thread_data_free (thread_data_t *td)
     pool_free_threaddata(td);
 }
 
-void forkgc_util_thread_data_cleanup (pthread_t tid)
+void forkscan_util_thread_data_cleanup (pthread_t tid)
 {
     thread_data_t *td, *last = NULL;
 
@@ -124,18 +124,18 @@ void forkgc_util_thread_data_cleanup (pthread_t tid)
     pthread_mutex_unlock(&g_staged_lock);
 
     if (td->ref_count > 0) {
-        forkgc_fatal("Forkscan: "
-                     "detected data race on exiting thread.\n");
+        forkscan_fatal("Forkscan: "
+                       "detected data race on exiting thread.\n");
     }
 
     if (td->stack_is_ours) {
         forkscan_buffer_freestack(td->user_stack_low);
     }
 
-    forkgc_util_thread_data_free(td);
+    forkscan_util_thread_data_free(td);
 }
 
-void forkgc_util_thread_list_init (thread_list_t *tl)
+void forkscan_util_thread_list_init (thread_list_t *tl)
 {
     assert(tl);
     if (tl->head == NULL) {
@@ -145,7 +145,7 @@ void forkgc_util_thread_list_init (thread_list_t *tl)
     }
 }
 
-void forkgc_util_thread_list_add (thread_list_t *tl, thread_data_t *td)
+void forkscan_util_thread_list_add (thread_list_t *tl, thread_data_t *td)
 {
     assert(tl); assert(td);
     pthread_mutex_lock(&tl->lock);
@@ -155,7 +155,7 @@ void forkgc_util_thread_list_add (thread_list_t *tl, thread_data_t *td)
     pthread_mutex_unlock(&tl->lock);
 }
 
-void forkgc_util_thread_list_remove (thread_list_t *tl, thread_data_t *td)
+void forkscan_util_thread_list_remove (thread_list_t *tl, thread_data_t *td)
 {
     thread_data_t *tmp;
     assert(tl); assert(td);
@@ -176,7 +176,7 @@ void forkgc_util_thread_list_remove (thread_list_t *tl, thread_data_t *td)
     pthread_mutex_unlock(&tl->lock);
 }
 
-thread_data_t *forkgc_util_thread_list_find (thread_list_t *tl, size_t addr)
+thread_data_t *forkscan_util_thread_list_find (thread_list_t *tl, size_t addr)
 {
     thread_data_t *ret;
 
@@ -193,7 +193,7 @@ thread_data_t *forkgc_util_thread_list_find (thread_list_t *tl, size_t addr)
     return ret;
 }
 
-void forkgc_util_push_free_list (free_t *free_list)
+void forkscan_util_push_free_list (free_t *free_list)
 {
     // FIXME: We should really do this add/remove stuff with transactions.
     free_list_node_t *node = MALLOC(sizeof(free_list_node_t));
@@ -204,7 +204,7 @@ void forkgc_util_push_free_list (free_t *free_list)
     pthread_mutex_unlock(&free_list_list_lock);
 }
 
-free_t *forkgc_util_pop_free_list ()
+free_t *forkscan_util_pop_free_list ()
 {
     // FIXME: We should really do this add/remove stuff with transactions.
     free_list_node_t *node;
@@ -274,7 +274,7 @@ void forkscan_util_free_ptrs (thread_data_t *td)
 /*                              I/O functions.                              */
 /****************************************************************************/
 
-int forkgc_diagnostic (const char *format, ...)
+int forkscan_diagnostic (const char *format, ...)
 {
     va_list arg;
     int ret;
@@ -289,7 +289,7 @@ int forkgc_diagnostic (const char *format, ...)
     return ret;
 }
 
-void forkgc_fatal (const char *format, ...)
+void forkscan_fatal (const char *format, ...)
 {
     va_list arg;
 
@@ -363,7 +363,7 @@ static void quicksort (size_t *addrs, int min, int max)
  * Sort the array, a, of the given length from lowest to highest.  The sort
  * happens in-place.
  */
-void forkgc_util_sort (size_t *a, int length)
+void forkscan_util_sort (size_t *a, int length)
 {
     quicksort(a, 0, length - 1);
 }
@@ -371,7 +371,7 @@ void forkgc_util_sort (size_t *a, int length)
 /**
  * Randomize the ordering of an array of addrs (of length n) in place.
  */
-void forkgc_util_randomize (size_t *addrs, int n)
+void forkscan_util_randomize (size_t *addrs, int n)
 {
     unsigned int i;
     for (i = 0; i < n; ++i) {
@@ -385,7 +385,7 @@ void forkgc_util_randomize (size_t *addrs, int n)
 /**
  * Compact a sorted list with duplicates and return the savings.
  */
-int forkgc_util_compact (size_t *a, int length)
+int forkscan_util_compact (size_t *a, int length)
 {
     int search, write = 0;
 

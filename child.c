@@ -195,7 +195,7 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
     size_t start_lookaside, end_lookaside;
     start_sort = forkscan_rdtsc();
 #endif
-    forkgc_util_sort(g_lookaside_list, g_lookaside_count);
+    forkscan_util_sort(g_lookaside_list, g_lookaside_count);
 #ifdef TIMING
     end_sort = forkscan_rdtsc();
     g_total_sort += end_sort - start_sort;
@@ -203,7 +203,7 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
     start_lookaside = end_sort;
 #endif
 
-    savings = forkgc_util_compact(g_lookaside_list, g_lookaside_count);
+    savings = forkscan_util_compact(g_lookaside_list, g_lookaside_count);
     g_lookaside_count -= savings;
 
     int cached_loc = 0;
@@ -425,7 +425,7 @@ static int collect_ranges (void *p,
             }
             g_ranges[g_n_ranges++] = next;
             if (g_n_ranges >= MAX_MARK_AND_SWEEP_RANGES) {
-                forkgc_fatal("Too many memory ranges.\n");
+                forkscan_fatal("Too many memory ranges.\n");
             }
         }
     }
@@ -551,7 +551,7 @@ void forkgc_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
 
         // Alert the uber parent.
         if (sizeof(size_t) != write(fd, &g_bytes_to_scan, sizeof(size_t))) {
-            forkgc_fatal("Failed to write to parent.\n");
+            forkscan_fatal("Failed to write to parent.\n");
         }
     }
 }

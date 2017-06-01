@@ -74,7 +74,7 @@ static void *mmap_wrap (size_t size, int shared)
                      MAP_ANONYMOUS | (shared ? MAP_SHARED : MAP_PRIVATE),
                      -1, 0);
     if (MAP_FAILED == ptr) {
-        forkgc_fatal("failed mmap().\n");
+        forkscan_fatal("failed mmap().\n");
     }
     assert(ptr);
     return ptr;
@@ -143,7 +143,7 @@ static memory_metadata_t *metadata_remove (void *addr)
     pthread_mutex_lock(&list_lock);
     for (curr = alloc_list; curr->addr != addr; curr = curr->next);
     if (NULL == curr) {
-        forkgc_fatal("internal error at %s:%d\n",
+        forkscan_fatal("internal error at %s:%d\n",
                      __FILE__, __LINE__);
     }
     curr->next->prev = curr->prev;
@@ -253,8 +253,8 @@ static void *alloc_mmap (size_t size, const char *reason, int shared)
     assert(meta->addr && meta->addr != MAP_FAILED);
     metadata_insert(meta);
     if (0 != mprotect(meta->addr, size, PROT_READ | PROT_WRITE)) {
-        forkgc_diagnostic("mprotect failed %s:%d\n",
-                          __FILE__, __LINE__);
+        forkscan_diagnostic("mprotect failed %s:%d\n",
+                            __FILE__, __LINE__);
     }
     return meta->addr;
 }
@@ -293,10 +293,10 @@ void forkgc_alloc_munmap (void *ptr)
 
     memory_metadata_t *meta = metadata_remove(ptr);
     if (NULL == meta) {
-        forkgc_fatal("lost track of memory.\n");
+        forkscan_fatal("lost track of memory.\n");
     }
     if (0 != munmap_wrap(meta->addr, meta->length)) {
-        forkgc_fatal("failed munmap().\n");
+        forkscan_fatal("failed munmap().\n");
     }
     metadata_free(meta);
 }

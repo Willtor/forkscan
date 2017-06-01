@@ -56,10 +56,10 @@ static void __assert_monotonicity (size_t *a, int n, const char *f, int line)
     int i;
     for (i = 0; i < n; ++i) {
         if (a[i] <= last) {
-            forkgc_diagnostic("Error at %s:%d\n", f, line);
-            forkgc_fatal("The list is not monotonic at position %d "
-                         "out of %d (%llu, last: %llu)\n",
-                         i, n, a[i], last);
+            forkscan_diagnostic("Error at %s:%d\n", f, line);
+            forkscan_fatal("The list is not monotonic at position %d "
+                           "out of %d (%llu, last: %llu)\n",
+                           i, n, a[i], last);
         }
         last = a[i];
     }
@@ -171,7 +171,7 @@ static void garbage_collect (addr_buffer_t *ab)
 
     // Open a pipe for communication between parent and child.
     if (0 != pipe2(pipefd, O_DIRECT)) {
-        forkgc_fatal("GC thread was unable to open a pipe.\n");
+        forkscan_fatal("GC thread was unable to open a pipe.\n");
     }
 
     // Send out signals.  When everybody is waiting at the line, fork the
@@ -185,15 +185,15 @@ static void garbage_collect (addr_buffer_t *ab)
     child_pid = fork();
 
     if (child_pid == -1) {
-        forkgc_fatal("Collection failed (fork).\n");
+        forkscan_fatal("Collection failed (fork).\n");
     } else if (child_pid == 0) {
         // Sort the addresses and generate the minimap for the scanner.
-        forkgc_util_sort(working_data->addrs, working_data->n_addrs);
+        forkscan_util_sort(working_data->addrs, working_data->n_addrs);
         assert_monotonicity(working_data->addrs, working_data->n_addrs);
         generate_minimap(working_data);
         if (deadrefs->n_addrs > 1) {
             // No minimap for deadrefs.
-            forkgc_util_sort(deadrefs->addrs, deadrefs->n_addrs);
+            forkscan_util_sort(deadrefs->addrs, deadrefs->n_addrs);
             assert_monotonicity(deadrefs->addrs, deadrefs->n_addrs);
         }
 
@@ -222,7 +222,7 @@ static void garbage_collect (addr_buffer_t *ab)
     size_t bytes_scanned;
     if (sizeof(size_t) != read(pipefd[PIPE_READ], &bytes_scanned,
                                sizeof(size_t))) {
-        forkgc_fatal("Failed to read from child.\n");
+        forkscan_fatal("Failed to read from child.\n");
     }
     if (bytes_scanned > g_scan_max) g_scan_max = bytes_scanned;
     close(pipefd[PIPE_READ]);
@@ -344,7 +344,7 @@ void forkgc_print_statistics ()
 
     fp = fopen("/proc/self/statm", "r");
     if (NULL == fp) {
-        forkgc_fatal("Unable to open /proc/self/statm.\n");
+        forkscan_fatal("Unable to open /proc/self/statm.\n");
     }
     bytes_read = fread(statm, 1, 255, fp);
     statm[statm[bytes_read - 1] == '\n'

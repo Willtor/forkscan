@@ -100,7 +100,7 @@ static int read_mapline (FILE *fp, mapline_t *m)
             // EOF.  Don't know why this happens, sometimes...
             return 0;
         }
-        forkgc_fatal("forkscan internal error: "
+        forkscan_fatal("forkscan internal error: "
                      "fscanf returned %d (expected 7)\n", n);
     } else {
         char c;
@@ -109,7 +109,7 @@ static int read_mapline (FILE *fp, mapline_t *m)
             m->path[0] = c;
             n = fscanf(fp, "%s", &m->path[1]); // FIXME: not safe.
             if (n != 1) {
-                forkgc_fatal("forkscan internal error: "
+                forkscan_fatal("forkscan internal error: "
                              "fscanf returned %d (expected 1)\n",
                              n);
             }
@@ -138,7 +138,7 @@ void forkgc_proc_stack_from_addr (mem_range_t *mem_range, size_t addr)
     mem_range->low = mem_range->high = 0;
 
     if (NULL == (fp = fopen(procmap, "r"))) {
-        forkgc_fatal("unable to open memory map file.\n");
+        forkscan_fatal("unable to open memory map file.\n");
     }
 
     while (read_mapline(fp, &mapline)) {
@@ -164,7 +164,7 @@ void forkgc_proc_map_iterate (int (*f) (void *arg,
     mapline_t mapline;
 
     if (NULL == (fp = fopen(procmap, "r"))) {
-        forkgc_fatal("unable to open memory map file.\n");
+        forkscan_fatal("unable to open memory map file.\n");
     }
 
     while (read_mapline(fp, &mapline)) {
@@ -192,8 +192,8 @@ void forkgc_proc_add_thread_data (thread_data_t *td)
 {
     // The list initialization will only actually happen if this is the
     // first time.
-    forkgc_util_thread_list_init(&thread_list);
-    forkgc_util_thread_list_add(&thread_list, td);
+    forkscan_util_thread_list_init(&thread_list);
+    forkscan_util_thread_list_add(&thread_list, td);
 }
 
 /**
@@ -202,7 +202,7 @@ void forkgc_proc_add_thread_data (thread_data_t *td)
  */
 void forkgc_proc_remove_thread_data (thread_data_t *td)
 {
-    forkgc_util_thread_list_remove(&thread_list, td);
+    forkscan_util_thread_list_remove(&thread_list, td);
 }
 
 /**
@@ -222,9 +222,9 @@ int forkgc_proc_signal_all_except (int sig, thread_data_t *except)
         if (td != except && td->is_active) {
             int ret = pthread_kill(td->self, sig);
             if (EINVAL == ret) {
-                forkgc_fatal("pthread_kill() returned EINVAL.\n");
+                forkscan_fatal("pthread_kill() returned EINVAL.\n");
             } else if (ESRCH == ret) {
-                forkgc_diagnostic("pthread_kill() returned ESRCH.\n");
+                forkscan_diagnostic("pthread_kill() returned ESRCH.\n");
             } else {
                 ++signal_count;
             }
@@ -249,9 +249,9 @@ int forkgc_proc_signal (int sig)
         if (td->is_active) {
             int ret = pthread_kill(td->self, sig);
             if (EINVAL == ret) {
-                forkgc_fatal("pthread_kill() returned EINVAL.\n");
+                forkscan_fatal("pthread_kill() returned EINVAL.\n");
             } else if (ESRCH == ret) {
-                forkgc_diagnostic("pthread_kill() returned ESRCH.\n");
+                forkscan_diagnostic("pthread_kill() returned ESRCH.\n");
             } else {
                 ++signal_count;
             }
