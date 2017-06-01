@@ -68,7 +68,7 @@ static void env_init ()
     // Pointers per thread -- how many pointers a thread can track before a
     // collection run occurs.  This should be a power of 2.  To avoid
     // complicated numbers the environment variable,
-    // FORKGC_PTRS_PER_THREAD, is multiplied by 1024 so that a user can
+    // FORKSCAN_PTRS_PER_THREAD, is multiplied by 1024 so that a user can
     // think in terms of small powers of 2.
     {
         int ptrs_per_thread;

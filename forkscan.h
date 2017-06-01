@@ -27,7 +27,7 @@ THE SOFTWARE.
 #include "child.h"
 #include <signal.h>
 
-#define SIGFORKGC SIGUSR1
+#define SIGFORKSCAN SIGUSR1
 
 /**
  * Acknowledge the signal sent by the GC thread and perform any work required.

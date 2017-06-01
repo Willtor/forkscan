@@ -117,7 +117,7 @@ static void yield (size_t n_yields)
  */
 static void signal_handler (int sig)
 {
-    assert(SIGFORKGC == sig);
+    assert(SIGFORKSCAN == sig);
     if (g_in_malloc) {
         g_waiting_to_fork = 1;
         return;
@@ -133,7 +133,7 @@ static void register_signal_handlers ()
 {
     /* We signal threads to get them to stop while we prepare a snapshot
        on the cleanup thread. */
-    if (signal(SIGFORKGC, signal_handler) == SIG_ERR) {
+    if (signal(SIGFORKSCAN, signal_handler) == SIG_ERR) {
         forkscan_fatal("Unable to register signal handler.\n");
     }
 

@@ -179,7 +179,7 @@ static void garbage_collect (addr_buffer_t *ab)
     size_t start, end;
     g_received_signal = 0;
     start = forkscan_rdtsc();
-    sig_count = forkscan_proc_signal(SIGFORKGC);
+    sig_count = forkscan_proc_signal(SIGFORKSCAN);
     while (g_received_signal < sig_count) pthread_yield();
     deadrefs = forkscan_buffer_get_dead_references();
     child_pid = fork();
