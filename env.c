@@ -24,8 +24,6 @@ THE SOFTWARE.
 #include <stdlib.h>
 #include "util.h"
 
-#define DEFAULT_SWEEPER_THREADS 8
-
 #define DEFAULT_THROTTLING_QUEUE 16
 #define MAX_THROTTLING_QUEUE 32
 
@@ -36,8 +34,6 @@ static const char env_ptrs_per_thread[] = "FORKSCAN_PTRS_PER_THREAD";
 
 static const char env_report_statistics[] = "FORKSCAN_REPORT_STATS";
 
-static const char env_sweeper_threads[] = "FORKSCAN_SWEEPER_THREAD_COUNT";
-
 static const char env_throttling_queue[] = "FORKSCAN_THROTTLING_QUEUE";
 
 // # of ptrs a thread can "save up" before initiating a collection run.
@@ -47,9 +43,6 @@ int g_forkscan_ptrs_per_thread;
 
 // Whether to report application statistics before the program terminates.
 int g_forkscan_report_statistics;
-
-// How many sweeper threads get spun up by the garbage collector.
-int g_forkscan_sweeper_thread_count;
 
 // How many collects can queue up before user threads get throttled.
 int g_forkscan_throttling_queue;
@@ -110,19 +103,6 @@ static void env_init ()
         // Whether to report application statistics before the program exits.
         report_statistics = get_int(getenv(env_report_statistics), 0);
         if (report_statistics != 0) g_forkscan_report_statistics = 1;
-    }
-
-    { /* FIXME: Kill sweeper thread code. */
-        int sweeper_threads;
-        sweeper_threads = get_int(getenv(env_sweeper_threads),
-                                  DEFAULT_SWEEPER_THREADS);
-        if (sweeper_threads <= 0) {
-            sweeper_threads = 1;
-        }
-        if (sweeper_threads > MAX_SWEEPER_THREADS) {
-            sweeper_threads = MAX_SWEEPER_THREADS;
-        }
-        g_forkscan_sweeper_thread_count = sweeper_threads;
     }
 
     {
