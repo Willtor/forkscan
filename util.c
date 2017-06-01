@@ -65,9 +65,9 @@ static thread_data_t *g_td_staged_to_free = NULL;
 // forked children since it's purely _our_ memory and nothing will be
 // hidden.  As a consequence, there is no copy-on-write cost for those
 // pages.
-DEFINE_POOL_ALLOC(threaddata, MEMBLOCK_SIZE, 8, forkgc_alloc_mmap_shared)
+DEFINE_POOL_ALLOC(threaddata, MEMBLOCK_SIZE, 8, forkscan_alloc_mmap_shared)
 DEFINE_POOL_ALLOC(ptrlist, (g_forkgc_ptrs_per_thread * sizeof(size_t)), 8,
-                  forkgc_alloc_mmap_shared)
+                  forkscan_alloc_mmap_shared)
 
 thread_data_t *forkscan_util_thread_data_new ()
 {

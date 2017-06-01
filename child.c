@@ -413,7 +413,7 @@ static int collect_ranges (void *p,
 
     mem_range_t big_range = { low, high };
     while (big_range.low != big_range.high) {
-        mem_range_t next = forkgc_alloc_next_subrange(&big_range);
+        mem_range_t next = forkscan_alloc_next_subrange(&big_range);
         if (next.low != next.high) {
             // This is a region of memory we want to scan.
             g_bytes_to_scan += next.high - next.low;

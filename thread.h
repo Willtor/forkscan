@@ -26,7 +26,7 @@ THE SOFTWARE.
 /**
  * Return the local metadata for this thread.
  */
-thread_data_t *forkgc_thread_get_td ();
+thread_data_t *forkscan_thread_get_td ();
 
 /**
  * Base routine of all threads that are created in the process.  The wrapper
@@ -34,43 +34,43 @@ thread_data_t *forkgc_thread_get_td ();
  * requested.  This allows us to hook each thread into the Forkscan system as
  * it is made.  Then we call the user routine.
  */
-void *forkgc_thread_base (void *arg);
+void *forkscan_thread_base (void *arg);
 
 /**
  * Do metadata cleanup for the thread before it exits.
  */
-void forkgc_thread_cleanup ();
+void forkscan_thread_cleanup ();
 
 /**
  * Send the given signal to all threads in the process and return the number
  * of signals sent.
  */
-int forkgc_thread_signal_all_but_me (int sig);
+int forkscan_thread_signal_all_but_me (int sig);
 
 /**
  * Return the address range of the stack where the user has (or might have)
  * data.
  */
-mem_range_t forkgc_thread_user_stack ();
+mem_range_t forkscan_thread_user_stack ();
 
 /**
  * Raise the "helping" flag for this thread.
  */
-void forkgc_thread_cleanup_raise_flag ();
+void forkscan_thread_cleanup_raise_flag ();
 
 /**
  * Lower the "helping" flag for this thread.
  */
-void forkgc_thread_cleanup_lower_flag ();
+void forkscan_thread_cleanup_lower_flag ();
 
 /**
  * Try to become the reclaimer.  Return true if successful, false otherwise.
  */
-int forkgc_thread_cleanup_try_acquire ();
+int forkscan_thread_cleanup_try_acquire ();
 
 /**
  * Give up reclaimer lock.
  */
-void forkgc_thread_cleanup_release ();
+void forkscan_thread_cleanup_release ();
 
 #endif // !defined _THREAD_H_

@@ -143,7 +143,7 @@ int pthread_create (pthread_t *thread,
 
     // Try to create the thread.
     ret = orig_pthread_create(thread, &real_attr,
-                              forkgc_thread_base, (void*)td);
+                              forkscan_thread_base, (void*)td);
 
     if (0 != ret) {
         // Ruh, roh!  Failed to create a thread.  That isn't really our
@@ -163,7 +163,7 @@ static void exit_wrapper (void *retval)
 {
     assert(orig_pthread_exit);
 
-    forkgc_thread_cleanup();
+    forkscan_thread_cleanup();
     __sync_fetch_and_sub(&g_thread_count, 1);
     orig_pthread_exit(retval);
 
@@ -225,7 +225,7 @@ static int main_replacement (int argc, char **argv, char **env)
     // Insert the metadata into the global structure.
     forkgc_proc_add_thread_data(td);
 
-    forkgc_thread_base(td);
+    forkscan_thread_base(td);
     assert(0); // Should not return.  It should die in main_thunk().
     return 0;
 }

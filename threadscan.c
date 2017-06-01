@@ -75,7 +75,7 @@ static void generate_working_pointers_list (addr_buffer_t *ab)
     ENDFOREACH_IN_THREAD_LIST(td, thread_list);
 
     ab->n_addrs = n;
-    assert(!forkgc_queue_is_full(&forkgc_thread_get_td()->ptr_list));
+    assert(!forkgc_queue_is_full(&forkscan_thread_get_td()->ptr_list));
 }
 
 static void become_reclaimer ()
@@ -90,7 +90,7 @@ static void become_reclaimer ()
 
     // Give the list to the gc thread, signaling it if it's asleep.
     forkgc_initiate_collection(ab);
-    forkgc_thread_cleanup_release();
+    forkscan_thread_cleanup_release();
 }
 
 /****************************************************************************/
@@ -103,7 +103,7 @@ static void yield (size_t n_yields)
     //if (n_yields > 10) usleep(MIN_OF(n_yields, 100));
     //else pthread_yield();
     g_in_malloc = 1;
-    forkscan_util_free_ptrs(forkgc_thread_get_td());
+    forkscan_util_free_ptrs(forkscan_thread_get_td());
     g_in_malloc = 0;
     if (g_waiting_to_fork) {
         g_waiting_to_fork = 0;
@@ -160,7 +160,7 @@ void *forkscan_malloc (size_t size)
     p = MALLOC(size);
 
     // Free a couple pointers, if we have them.
-    forkscan_util_free_ptrs(forkgc_thread_get_td());
+    forkscan_util_free_ptrs(forkscan_thread_get_td());
     g_in_malloc = 0;
 
     if (g_waiting_to_fork) {
@@ -185,7 +185,7 @@ void forkscan_retire (void *ptr)
         return;
     }
 
-    thread_data_t *td = forkgc_thread_get_td();
+    thread_data_t *td = forkscan_thread_get_td();
     forkgc_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
     if (forkgc_queue_is_full(&td->ptr_list)) {
         size_t start, end;
@@ -196,7 +196,7 @@ void forkscan_retire (void *ptr)
             // While this thread's local queue of pointers is full, try to
             // initiate reclamation.
 
-            forkgc_thread_cleanup_try_acquire()
+            forkscan_thread_cleanup_try_acquire()
                 ? become_reclaimer() // this will release the cleanup lock.
                 : yield(n_loops);
         } while (forkgc_queue_is_full(&td->ptr_list));

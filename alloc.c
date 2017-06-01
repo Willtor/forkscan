@@ -204,7 +204,7 @@ static void metadata_free (memory_metadata_t *meta)
 }
 
 /**
- * See forkgc_alloc_next_subrange().  This is not thread-safe.
+ * See forkscan_alloc_next_subrange().  This is not thread-safe.
  */
 static mem_range_t metadata_break_range (mem_range_t *big_range)
 {
@@ -268,7 +268,7 @@ static void *alloc_mmap (size_t size, const char *reason, int shared)
  * only ever ask for big chunks in multiples of the page size.
  * @return The allocated memory.
  */
-void *forkgc_alloc_mmap (size_t size, const char *reason)
+void *forkscan_alloc_mmap (size_t size, const char *reason)
 {
     return alloc_mmap(size, reason, /*shared=*/0);
 }
@@ -279,7 +279,7 @@ void *forkgc_alloc_mmap (size_t size, const char *reason)
  * memory is marked as shared among processes.
  * @return The allocated memory.
  */
-void *forkgc_alloc_mmap_shared (size_t size, const char *reason)
+void *forkscan_alloc_mmap_shared (size_t size, const char *reason)
 {
     return alloc_mmap(size, reason, /*shared=*/1);
 }
@@ -287,7 +287,7 @@ void *forkgc_alloc_mmap_shared (size_t size, const char *reason)
 /**
  * munmap() for the Forkscan system.
  */
-void forkgc_alloc_munmap (void *ptr)
+void forkscan_alloc_munmap (void *ptr)
 {
     assert(ptr);
 
@@ -310,7 +310,7 @@ void forkgc_alloc_munmap (void *ptr)
  * Forkscan.  This chunk may have zero length if no such chunk could be
  * found in *big_range.
  */
-mem_range_t forkgc_alloc_next_subrange (mem_range_t *big_range)
+mem_range_t forkscan_alloc_next_subrange (mem_range_t *big_range)
 {
     // FIXME: Using mem_range_t creates a circular dependency on util.h.
     return metadata_break_range(big_range);

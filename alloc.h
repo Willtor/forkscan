@@ -36,7 +36,7 @@ THE SOFTWARE.
  * only ever ask for big chunks in multiples of the page size.
  * @return The allocated memory.
  */
-void *forkgc_alloc_mmap (size_t size, const char *reason);
+void *forkscan_alloc_mmap (size_t size, const char *reason);
 
 /**
  * mmap() for the Forkscan system.  This call never fails.  But you should
@@ -44,12 +44,12 @@ void *forkgc_alloc_mmap (size_t size, const char *reason);
  * memory is marked as shared among processes.
  * @return The allocated memory.
  */
-void *forkgc_alloc_mmap_shared (size_t size, const char *reason);
+void *forkscan_alloc_mmap_shared (size_t size, const char *reason);
 
 /**
  * munmap() for the Forkscan system.
  */
-void forkgc_alloc_munmap (void *ptr);
+void forkscan_alloc_munmap (void *ptr);
 
 /**
  * Given a *big_range, return the first chunk of it that doesn't contain
@@ -60,6 +60,6 @@ void forkgc_alloc_munmap (void *ptr);
  * Forkscan.  This chunk may have zero length if no such chunk could be
  * found in *big_range.
  */
-mem_range_t forkgc_alloc_next_subrange (mem_range_t *big_range);
+mem_range_t forkscan_alloc_next_subrange (mem_range_t *big_range);
 
 #endif // !defined _ALLOC_H_

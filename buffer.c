@@ -64,7 +64,7 @@ addr_buffer_t *forkscan_make_reclaimer_buffer ()
         g_default_capacity = g_forkgc_ptrs_per_thread * MAX_THREAD_COUNT;
     }
     size_t sz = g_default_capacity * sizeof(size_t) + PAGESIZE;
-    char *raw_mem = forkgc_alloc_mmap(sz, "reclaimer");
+    char *raw_mem = forkscan_alloc_mmap(sz, "reclaimer");
 
     //   0 - 4095: Reserved page for the addr_buffer_t struct.
     //   4096 -  : Address list.
@@ -93,7 +93,7 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
         ab = g_available_aggregates;
         while (ab && ab->capacity < capacity) {
             addr_buffer_t *tmp = ab->next;
-            forkgc_alloc_munmap(ab);
+            forkscan_alloc_munmap(ab);
             ab = tmp;
         }
         if (ab) {
@@ -120,11 +120,11 @@ addr_buffer_t *forkscan_make_aggregate_buffer (int capacity)
     // number of pages needed for the minimap, plus one (for the
     // addr_buffer_t).
     char *p =
-        (char*)forkgc_alloc_mmap_shared((pages_of_addrs     // addr array.
-                                         + pages_of_minimap // minimap.
-                                         + 1)               // struct page.
-                                        * PAGESIZE,
-                                        "aggregate");
+        (char*)forkscan_alloc_mmap_shared((pages_of_addrs     // addr array.
+                                           + pages_of_minimap // minimap.
+                                           + 1)               // struct page.
+                                          * PAGESIZE,
+                                          "aggregate");
 
     // Perform assignments as offsets into the block that was bulk-allocated.
     size_t offset = 0;
@@ -240,7 +240,7 @@ addr_buffer_t *forkscan_buffer_get_dead_references ()
         size_t sz = g_default_capacity * sizeof(size_t) + PAGESIZE;
         // mmap_shared to avoid the cost of COW.  This also needs to change
         // if iterations are ever done in parallel.
-        char *raw_mem = forkgc_alloc_mmap_shared(sz, "deadrefs");
+        char *raw_mem = forkscan_alloc_mmap_shared(sz, "deadrefs");
         ret = (addr_buffer_t*)raw_mem;
         ret->addrs = (size_t*)&raw_mem[PAGESIZE];
         ret->n_addrs = 0;
@@ -271,7 +271,7 @@ addr_buffer_t *forkscan_buffer_get_dead_references ()
     return ret;
 }
 
-DEFINE_POOL_ALLOC(stack, STACKSIZE, NSTACKS, forkgc_alloc_mmap)
+DEFINE_POOL_ALLOC(stack, STACKSIZE, NSTACKS, forkscan_alloc_mmap)
 
 void *forkscan_buffer_makestack (size_t *stacksize)
 {
