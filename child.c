@@ -116,18 +116,21 @@ static int addr_find (size_t val, addr_buffer_t *ab)
     return loc;
 }
 
+/** Search the rest of the cacheline before giving up and doing a binary
+ *  search for the val.  This saves TONS of time in practice, since the
+ *  values are sorted.
+ */
 static int addr_find_hint (size_t val, addr_buffer_t *ab, int hint)
 {
     size_t cmp = ab->addrs[hint];
     if (val <= cmp) return hint;
 
-    // FIXME: Should parameterize cache-line size, etc.  Not good code.
     size_t cmp_addr = (size_t)&ab->addrs[hint];
-    cmp_addr &= ~(size_t)63;
-    cmp_addr += 56;
+    cmp_addr &= ~(CACHELINESIZE - 1);
+    cmp_addr += CACHELINESIZE - sizeof(size_t);
     int remaining_line =
         (cmp_addr - (size_t)&ab->addrs[hint]) / sizeof(size_t);
-    remaining_line += 8;
+    remaining_line += sizeof(size_t);
 
     int i;
     for (i = 0; i < remaining_line; ++i) {

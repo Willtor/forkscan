@@ -53,6 +53,8 @@ THE SOFTWARE.
 
 #define PTR_MASK(v) ((v) & ~3) // Mask off the low two bits.
 
+#define CACHELINESIZE ((size_t)64)
+
 #define PAGESIZE ((size_t)0x1000)
 
 #define PAGEALIGN(addr) ((addr) & ~(PAGESIZE - 1))
