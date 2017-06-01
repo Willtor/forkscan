@@ -29,7 +29,15 @@ THE SOFTWARE.
 #define _ALLOC_H_
 
 #include <stddef.h>
-#include "util.h"
+
+typedef struct mem_range_t mem_range_t;
+
+/** Metadata for a block of memory.
+ */
+struct mem_range_t {
+    size_t low;
+    size_t high;
+};
 
 /**
  * mmap() for the Forkscan system.  This call never fails.  But you should

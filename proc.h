@@ -23,6 +23,7 @@ THE SOFTWARE.
 #ifndef _PROC_H_
 #define _PROC_H_
 
+#include "alloc.h"
 #include <stddef.h>
 #include "util.h"
 

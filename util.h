@@ -23,6 +23,7 @@ THE SOFTWARE.
 #ifndef _UTIL_H_
 #define _UTIL_H_
 
+#include "alloc.h"
 #include "buffer.h"
 #include "metautil.h"
 #include <pthread.h>
@@ -70,22 +71,11 @@ THE SOFTWARE.
 #define TIMESTAMP_IS_ACTIVE(field) ((field) & _TIMESTAMP_FLAG)
 #define TIMESTAMP_SET_ACTIVE(field) TIMESTAMP_RAISE_FLAG(field)
 
-typedef struct mem_range_t mem_range_t;
-
 typedef struct free_t free_t;
 
 typedef struct thread_data_t thread_data_t;
 
 typedef struct thread_list_t thread_list_t;
-
-/****************************************************************************/
-/*                 Memory range data for write protection.                  */
-/****************************************************************************/
-
-struct mem_range_t {
-    size_t low;
-    size_t high;
-};
 
 /****************************************************************************/
 /*                       Storage for per-thread data.                       */

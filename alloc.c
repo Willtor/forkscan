@@ -312,6 +312,5 @@ void forkscan_alloc_munmap (void *ptr)
  */
 mem_range_t forkscan_alloc_next_subrange (mem_range_t *big_range)
 {
-    // FIXME: Using mem_range_t creates a circular dependency on util.h.
     return metadata_break_range(big_range);
 }

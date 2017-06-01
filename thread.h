@@ -23,6 +23,8 @@ THE SOFTWARE.
 #ifndef _THREAD_H_
 #define _THREAD_H_
 
+#include "alloc.h"
+
 /**
  * Return the local metadata for this thread.
  */

@@ -25,6 +25,7 @@ THE SOFTWARE.
 #include "buffer.h"
 #include "env.h"
 #include <pthread.h>
+#include "util.h"
 
 #define STACKSIZE (2 * 1024 * 1024)
 #define NSTACKS 16
