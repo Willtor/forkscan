@@ -285,7 +285,7 @@ void forkscan_proc_wait_for_timestamp (size_t curr)
     // they try to help.
 }
 
-__attribute__((constructor))
+__attribute__((constructor (101)))
 static void proc_init ()
 {
     thread_list.head = NULL;

@@ -259,7 +259,7 @@ int __libc_start_main(int (*main) (int, char **, char **),
  * they can be called by their respective wrappers.  This function gets
  * called automatically as soon as the module is loaded.
  */
-__attribute__((constructor))
+__attribute__((constructor (101)))
 static void do_wrapper_replacement ()
 {
     orig_pthread_create = dlsym(RTLD_NEXT, "pthread_create");
