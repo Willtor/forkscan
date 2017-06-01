@@ -118,7 +118,7 @@ static int addr_find (size_t val, addr_buffer_t *ab)
 
 /** Search the rest of the cacheline before giving up and doing a binary
  *  search for the val.  This saves TONS of time in practice, since the
- *  values are sorted.
+ *  values are sorted.  "hint" is where the last val lived.
  */
 static int addr_find_hint (size_t val, addr_buffer_t *ab, int hint)
 {

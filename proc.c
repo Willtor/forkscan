@@ -110,8 +110,8 @@ static int read_mapline (FILE *fp, mapline_t *m)
             n = fscanf(fp, "%s", &m->path[1]); // FIXME: not safe.
             if (n != 1) {
                 forkscan_fatal("forkscan internal error: "
-                             "fscanf returned %d (expected 1)\n",
-                             n);
+                               "fscanf returned %d (expected 1)\n",
+                               n);
             }
             while ('\n' != (c = fgetc(fp)));
         }
