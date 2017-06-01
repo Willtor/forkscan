@@ -252,7 +252,7 @@ static void garbage_collect (addr_buffer_t *ab)
 /**
  * Acknowledge the signal sent by the GC thread and perform any work required.
  */
-void forkgc_acknowledge_signal ()
+void forkscan_acknowledge_signal ()
 {
     size_t old_counter;
 
@@ -265,7 +265,7 @@ void forkgc_acknowledge_signal ()
 /**
  * Pass a list of pointers to the GC thread for it to collect.
  */
-void forkgc_initiate_collection (addr_buffer_t *ab)
+void forkscan_initiate_collection (addr_buffer_t *ab)
 {
     pthread_mutex_lock(&g_gc_mutex);
     ++g_waiting_collects;
@@ -289,7 +289,7 @@ void forkgc_initiate_collection (addr_buffer_t *ab)
 /**
  * Garbage-collector thread.
  */
-void *forkgc_thread (void *ignored)
+void *forkscan_thread (void *ignored)
 {
     addr_buffer_t *ab;
 
@@ -336,7 +336,7 @@ void forkscan_set_allocator (void *(*alloc) (size_t),
 /**
  * Print program statistics to stdout.
  */
-void forkgc_print_statistics ()
+void forkscan_print_statistics ()
 {
     char statm[256];
     size_t bytes_read;

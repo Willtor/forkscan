@@ -89,7 +89,7 @@ static void become_reclaimer ()
     generate_working_pointers_list(ab);
 
     // Give the list to the gc thread, signaling it if it's asleep.
-    forkgc_initiate_collection(ab);
+    forkscan_initiate_collection(ab);
     forkscan_thread_cleanup_release();
 }
 
@@ -107,7 +107,7 @@ static void yield (size_t n_yields)
     g_in_malloc = 0;
     if (g_waiting_to_fork) {
         g_waiting_to_fork = 0;
-        forkgc_acknowledge_signal();
+        forkscan_acknowledge_signal();
     }
     pthread_yield();
 }
@@ -122,7 +122,7 @@ static void signal_handler (int sig)
         g_waiting_to_fork = 1;
         return;
     }
-    forkgc_acknowledge_signal();
+    forkscan_acknowledge_signal();
 }
 
 /**
@@ -168,7 +168,7 @@ void *forkscan_malloc (size_t size)
         // We need to make sure it isn't holding the global lock when we
         // initiate cleanup.
         g_waiting_to_fork = 0;
-        forkgc_acknowledge_signal();
+        forkscan_acknowledge_signal();
     }
     return p;
 }
@@ -219,7 +219,7 @@ void forkscan_free (void *ptr)
 
     if (g_waiting_to_fork) {
         g_waiting_to_fork = 0;
-        forkgc_acknowledge_signal();
+        forkscan_acknowledge_signal();
     }
 }
 

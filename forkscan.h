@@ -32,21 +32,21 @@ THE SOFTWARE.
 /**
  * Acknowledge the signal sent by the GC thread and perform any work required.
  */
-void forkgc_acknowledge_signal ();
+void forkscan_acknowledge_signal ();
 
 /**
  * Pass a list of pointers to the GC thread for it to collect.
  */
-void forkgc_initiate_collection (addr_buffer_t *ab);
+void forkscan_initiate_collection (addr_buffer_t *ab);
 
 /**
  * Garbage-collector thread.
  */
-void *forkgc_thread (void *ignored);
+void *forkscan_thread (void *ignored);
 
 /**
  * Print program statistics to stdout.
  */
-void forkgc_print_statistics ();
+void forkscan_print_statistics ();
 
 #endif // !defined FORKSCAN

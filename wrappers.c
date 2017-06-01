@@ -176,7 +176,7 @@ void pthread_exit (void *retval)
     exit_wrapper(retval);
 }
 
-void forkgc_pthread_exit (void *retval)
+void forkscan_pthread_exit (void *retval)
 {
     exit_wrapper(retval);
 }
@@ -204,7 +204,7 @@ static void *main_thunk (void *arg)
     main_args_t *main_args = (main_args_t*)arg;
     ret = orig_main(main_args->argc, main_args->argv, main_args->env);
     if (g_forkscan_report_statistics) {
-        forkgc_print_statistics();
+        forkscan_print_statistics();
     }
     exit(ret);
 }
@@ -239,7 +239,7 @@ int __libc_start_main(int (*main) (int, char **, char **),
                       void (*stack_end))
 {
     pthread_t tid;
-    int ret = orig_pthread_create(&tid, NULL, forkgc_thread, NULL);
+    int ret = orig_pthread_create(&tid, NULL, forkscan_thread, NULL);
     if (0 != ret) {
         forkscan_fatal("Unable to start garbage collector.\n");
         // Does not return.
