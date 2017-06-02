@@ -26,7 +26,6 @@ THE SOFTWARE.
 #include "child.h"
 #include "env.h"
 #include "forkscan.h"
-#include <jemalloc/jemalloc.h>
 #include "proc.h"
 #include <pthread.h>
 #include <string.h>

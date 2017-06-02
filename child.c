@@ -24,7 +24,6 @@ THE SOFTWARE.
 #include <assert.h>
 #include "alloc.h"
 #include "child.h"
-#include <jemalloc/jemalloc.h>
 #include <malloc.h>
 #include "proc.h"
 #include <pthread.h>

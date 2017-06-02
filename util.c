@@ -24,7 +24,6 @@ THE SOFTWARE.
 #include "alloc.h"
 #include "env.h"
 #include <errno.h>
-#include <jemalloc/jemalloc.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -415,7 +414,11 @@ size_t forkscan_rdtsc ()
     return ret;
 }
 
+extern void *__super_malloc (size_t);
+extern void __super_free (void *);
+extern size_t __super_malloc_usable_size (void *);
+
 /* Allocator Functions */
-void *(*__forkscan_alloc) (size_t) = je_malloc;
-void (*__forkscan_free) (void *) = je_free;
-size_t (*__forkscan_usable_size) (void *) = je_malloc_usable_size;
+void *(*__forkscan_alloc) (size_t) = __super_malloc;
+void (*__forkscan_free) (void *) = __super_free;
+size_t (*__forkscan_usable_size) (void *) = __super_malloc_usable_size;

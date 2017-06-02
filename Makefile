@@ -2,6 +2,7 @@ CXX 	= gcc -g
 
 INSTALL_DIR = /usr/local
 
+MALLOCAR = supermalloc.a
 FORKSCAN = libforkscan.so
 TARGETS	= $(FORKSCAN)
 
@@ -22,20 +23,21 @@ FORKSCAN_OBJ = $(FORKSCAN_SRC:.c=.o)
 
 # The -fno-zero-initialized-in-bss flag appears to be busted.
 #CFLAGS = -fno-zero-initialized-in-bss
-CFLAGS := -O2 -DJEMALLOC_NO_DEMANGLE
+CFLAGS := -O3 -DJEMALLOC_NO_DEMANGLE
 #CFLAGS += -DTIMING
 ifndef DEBUG
 	CFLAGS := $(CFLAGS) -DNDEBUG
 endif
-LDFLAGS = -ldl -pthread
+LINKMALLOC = -L. -l:$(MALLOCAR)
+LDFLAGS = -ldl -pthread -Wl,-z,defs
 
 all:	$(TARGETS)
 
 debug:
 	DEBUG=1 make all
 
-$(FORKSCAN): $(FORKSCAN_OBJ)
-	$(CXX) $(CFLAGS) -shared -Wl,-soname,$@ -o $@ $^ $(LDFLAGS)
+$(FORKSCAN): $(FORKSCAN_OBJ) | $(MALLOCAR)
+	$(CXX) $(CFLAGS) -shared -Wl,-soname,$@ -o $@ $^ $(LINKMALLOC) $(LDFLAGS)
 
 $(INSTALL_DIR)/lib/$(FORKSCAN): $(FORKSCAN)
 	cp $< $@

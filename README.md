@@ -8,13 +8,16 @@ When one thread removes a node from a data structure, it isn't safe to call ***f
 
 ## Compilation
 
-At this time, the Forkscan is only supported on Linux.  Forkscan does not allocate its own memory, but relies on a (runtime-configurable) allocator.  By default, it uses JE Malloc.  To install JE Malloc on a Debian/Ubuntu-like system, use:
+At this time, the Forkscan is only supported on Linux.  Forkscan uses SuperMalloc by default (https://github.com/kuszmaul/SuperMalloc), but it requires a special non-C++ build.
 
 ```
-% sudo apt-get install libjemalloc libjemalloc-dev
+% git clone https://github.com/kuszmaul/SuperMalloc.git
+% cd SuperMalloc/release
+% make PREFIX=__super_ NOCPPRUNTIME=true
+% make ../release/supermalloc.a
 ```
 
-Use ***make*** to build the library.
+Copy the resulting supermalloc.a archive to the Forkscan directory and use ***make*** to build the library.
 
 ```
 % make
@@ -50,7 +53,7 @@ To include the library in your build, install it as above and add the library to
 -lforkscan
 ```
 
-To replace the underlying allocator (JE Malloc), use the ***forkscan_set_allocator*** routine.  The function requires a ***malloc***, ***free***, and ***malloc_usable_size*** replacement functions.  ***malloc_usable_size*** is implemented by most allocators and returns the size (in bytes) of the given allocated block.  E.g.,
+To replace the underlying allocator (SuperMalloc), use the ***forkscan_set_allocator*** routine.  The function requires a ***malloc***, ***free***, and ***malloc_usable_size*** replacement functions.  ***malloc_usable_size*** is implemented by most allocators and returns the size (in bytes) of the given allocated block.  E.g.,
 
 ```
 forkscan_set_allocator(malloc, free, malloc_usable_size);
@@ -58,7 +61,7 @@ forkscan_set_allocator(malloc, free, malloc_usable_size);
 
 ## Recommendations
 
-+ Use JE Malloc, TC-Malloc, or Hoard, which are known to be fast allocators in multi-threaded code.  Mixing ***malloc*** and ***free*** calls from different libraries can cause the program to crash.
++ Use the default SuperMalloc, or install and use JE Malloc, TC-Malloc, or Hoard, which are known to be fast allocators in multi-threaded code.  Mixing ***malloc*** and ***free*** calls from different libraries can cause the program to crash.
 
 ## Bugs/Questions/Contributions
 

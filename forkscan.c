@@ -27,7 +27,6 @@ THE SOFTWARE.
 #include "env.h"
 #include <fcntl.h>
 #include "forkscan.h"
-#include <jemalloc/jemalloc.h>
 #include <malloc.h>
 #include "proc.h"
 #include <pthread.h>
