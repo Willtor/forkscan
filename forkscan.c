@@ -240,7 +240,6 @@ static void garbage_collect (addr_buffer_t *ab)
         g_uncollected_data->addrs[g_uncollected_data->n_addrs++] =
             PTR_MASK(working_data->addrs[i]);
     }
-    fprintf(stderr, "%d ptrs remaining\n", g_uncollected_data->n_addrs);
 
     forkscan_buffer_unref_buffer(working_data);
 }
