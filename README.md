@@ -14,12 +14,13 @@ At this time, the Forkscan is only supported on Linux.  Forkscan uses SuperMallo
 % git clone https://github.com/kuszmaul/SuperMalloc.git
 % cd SuperMalloc/release
 % make PREFIX=__super_ NOCPPRUNTIME=true
-% make ../release/supermalloc.a
 ```
 
-Copy the resulting supermalloc.a archive to the Forkscan directory and use ***make*** to build the library.
+Copy the resulting lib/supermalloc.a archive to the Forkscan directory and use ***make*** to build Forkscan.
 
 ```
+% cp lib/supermalloc.a /path/to/forkscan/repo/
+% cd /path/to/forkscan/repo
 % make
 ```
 
