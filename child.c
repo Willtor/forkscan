@@ -435,6 +435,25 @@ static int collect_ranges (void *p,
     return 1;
 }
 
+/** Gather the user stack range info and include it in the search.
+ */
+static void add_stack_ranges ()
+{
+    // It is safe to iterate over this list because there are no other threads
+    // in this process.
+    thread_list_t *tl = forkscan_proc_get_thread_list();
+    thread_data_t *td;
+    for (td = tl->head; NULL != td; td = td->next) {
+        if (td->stack_is_ours) {
+            g_bytes_to_scan += td->user_stack_high - td->user_stack_low;
+            // Let each scanner do a whole stack, no matter how big it is.
+            g_ranges[g_n_ranges].high = (size_t)td->user_stack_high;
+            g_ranges[g_n_ranges].low = (size_t)td->user_stack_low;
+            ++g_n_ranges;
+        }
+    }
+}
+
 void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
 {
     assert(ab);
@@ -443,6 +462,7 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     // Scan memory for references.
     g_bytes_to_scan = 0;
     forkscan_proc_map_iterate(collect_ranges, NULL);
+    add_stack_ranges();
     ab->completed_children = 0;
     ab->cutoff_reached = 0;
 
