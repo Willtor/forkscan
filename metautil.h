@@ -54,10 +54,10 @@ THE SOFTWARE.
     static void pool_free_##pool (void *p)                              \
     {                                                                   \
         pool##_node_t *node = (pool##_node_t*)p;                        \
-        pthread_mutex_unlock(&g_##pool##_lock);                         \
+        pthread_mutex_lock(&g_##pool##_lock);                           \
         node->next = g_##pool##_pool;                                   \
         g_##pool##_pool = node;                                         \
-        pthread_mutex_lock(&g_##pool##_lock);                           \
+        pthread_mutex_unlock(&g_##pool##_lock);                         \
     }
 
 #endif
