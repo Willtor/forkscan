@@ -158,7 +158,7 @@ static addr_buffer_t *aggregate_addrs (addr_buffer_t *old,
     return ret;
 }
 
-static void garbage_collect (addr_buffer_t *ab)
+static void reclaim_iteration (addr_buffer_t *ab)
 {
     addr_buffer_t *working_data;
     addr_buffer_t *deadrefs = NULL;
@@ -262,10 +262,11 @@ void forkscan_acknowledge_signal ()
 }
 
 /**
- * Pass a list of pointers to the GC thread for it to collect.
+ * Pass a list of pointers to the reclamation thread for it to collect.
  */
-void forkscan_initiate_collection (addr_buffer_t *ab)
+void forkscan_initiate_collection (addr_buffer_t *ab, int run_iteration)
 {
+    // TBD: use run_iteration argument.
     pthread_mutex_lock(&g_gc_mutex);
     ++g_waiting_collects;
     ab->next = g_addr_buffer;
@@ -313,7 +314,7 @@ void *forkscan_thread (void *ignored)
 
         pthread_mutex_unlock(&g_gc_mutex);
 
-        garbage_collect(ab);
+        reclaim_iteration(ab);
     }
 
     return NULL;

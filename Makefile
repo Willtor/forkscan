@@ -23,7 +23,7 @@ FORKSCAN_OBJ = $(FORKSCAN_SRC:.c=.o)
 
 # The -fno-zero-initialized-in-bss flag appears to be busted.
 #CFLAGS = -fno-zero-initialized-in-bss
-CFLAGS := -O3 -DJEMALLOC_NO_DEMANGLE
+CFLAGS := -O3
 #CFLAGS += -DTIMING
 ifndef DEBUG
 	CFLAGS := $(CFLAGS) -DNDEBUG

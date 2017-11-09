@@ -42,6 +42,8 @@ typedef struct config_t config_t;
 struct config_t {
     int max_ptrs; // Max pointer count that can be tracked during reclamation.
 
+    int auto_run; // Whether the system should automatically do iterations.
+
     // Size of the BIG buffer used to store pointers for a collection run.
     size_t working_buffer_sz;
 };
@@ -54,6 +56,7 @@ static config_t g_config;
 
 static volatile __thread int g_in_malloc = 0;
 static __thread int g_waiting_to_fork = 0;
+static int g_force_iteration = 0;
 
 /****************************************************************************/
 /*                                Reclaimer.                                */
@@ -77,7 +80,7 @@ static void generate_working_pointers_list (addr_buffer_t *ab)
     assert(!forkscan_queue_is_full(&forkscan_thread_get_td()->ptr_list));
 }
 
-static void become_reclaimer ()
+static void become_reclaimer (int run_iteration)
 {
     addr_buffer_t *ab;
 
@@ -87,8 +90,14 @@ static void become_reclaimer ()
     // Copy the pointers into the list.
     generate_working_pointers_list(ab);
 
+    // Decide whether to perform an iteration.
+    if (g_force_iteration > 0) {
+        run_iteration = 1;
+        g_force_iteration = 0;
+    }
+
     // Give the list to the gc thread, signaling it if it's asleep.
-    forkscan_initiate_collection(ab);
+    forkscan_initiate_collection(ab, run_iteration);
     forkscan_thread_cleanup_release();
 }
 
@@ -141,6 +150,8 @@ static void register_signal_handlers ()
     // Calculate reserved space for stored addresses.
     g_config.working_buffer_sz = g_config.max_ptrs * sizeof(size_t)
         + PAGESIZE;
+
+    g_config.auto_run = 1; // Run automatically by default.
 }
 
 /****************************************************************************/
@@ -196,7 +207,8 @@ void forkscan_retire (void *ptr)
             // initiate reclamation.
 
             forkscan_thread_cleanup_try_acquire()
-                ? become_reclaimer() // this will release the cleanup lock.
+                ? become_reclaimer(g_config.auto_run)
+                  // this releases the cleanup lock.
                 : yield(n_loops);
         } while (forkscan_queue_is_full(&td->ptr_list));
         end = forkscan_rdtsc();
@@ -220,6 +232,35 @@ void forkscan_free (void *ptr)
         g_waiting_to_fork = 0;
         forkscan_acknowledge_signal();
     }
+}
+
+/**
+ * Perform an iteration of reclamation.  This is intended for users who have
+ * disabled automatic iterations or who otherwise want to override it and
+ * force an iteration at a time that is convenient for their application.
+ *
+ * If this call contends with another thread trying to reclaim, one of them
+ * will fail and return a non-zero value.  forkscan_force_reclaim() returns
+ * zero on the thread that succeeds.
+ */
+int forkscan_force_reclaim ()
+{
+    g_force_iteration = 1;
+    if (forkscan_thread_cleanup_try_acquire()) {
+        become_reclaimer(1);
+        return 0; // Success.
+    }
+    return 1; // Failure.
+}
+
+/**
+ * auto_run = 1 (enable) or 0 (disable) automatic iterations of reclamation.
+ * If the automatic system is disabled, it is up to the user to force
+ * iterations with forkscan_force_reclaim().
+ */
+void forkscan_set_auto_run (int auto_run)
+{
+    g_config.auto_run = auto_run;
 }
 
 /**
