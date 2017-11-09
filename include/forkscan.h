@@ -50,6 +50,24 @@ void forkscan_retire (void *ptr);
 void forkscan_free (void *ptr);
 
 /**
+ * Perform an iteration of reclamation.  This is intended for users who have
+ * disabled automatic iterations or who otherwise want to override it and
+ * force an iteration at a time that is convenient for their application.
+ *
+ * If this call contends with another thread trying to reclaim, one of them
+ * will fail and return a non-zero value.  forkscan_force_reclaim() returns
+ * zero on the thread that succeeds.
+ */
+int forkscan_force_reclaim ();
+
+/**
+ * auto_run = 1 (enable) or 0 (disable) automatic iterations of reclamation.
+ * If the automatic system is disabled, it is up to the user to force
+ * iterations with forkscan_force_reclaim().
+ */
+void forkscan_set_auto_run (int auto_run);
+
+/**
  * Allocate a buffer of "size" bytes and return a pointer to it.  This memory
  * will be tracked by the garbage collector, so free() should never be called
  * on it.
