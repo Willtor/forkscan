@@ -56,7 +56,7 @@ static config_t g_config;
 
 static volatile __thread int g_in_malloc = 0;
 static __thread int g_waiting_to_fork = 0;
-static int g_force_iteration = 0;
+static volatile int g_force_iteration = 0;
 
 /****************************************************************************/
 /*                                Reclaimer.                                */
@@ -80,9 +80,18 @@ static void generate_working_pointers_list (addr_buffer_t *ab)
     assert(!forkscan_queue_is_full(&forkscan_thread_get_td()->ptr_list));
 }
 
-static void become_reclaimer (int run_iteration)
+static void become_reclaimer ()
 {
     addr_buffer_t *ab;
+    int force_iteration = 0;
+
+    // Decide whether to perform an iteration.  g_force_iteration was set if
+    // the user initiated a reclamation.  Whether this is that thread or not,
+    // this is the reclaimer thread and needs to honor that request.
+    if (g_force_iteration > 0) {
+        force_iteration = 1;
+        g_force_iteration = 0;
+    }
 
     // Get memory to store the list of pointers:
     ab = forkscan_make_reclaimer_buffer();
@@ -90,14 +99,8 @@ static void become_reclaimer (int run_iteration)
     // Copy the pointers into the list.
     generate_working_pointers_list(ab);
 
-    // Decide whether to perform an iteration.
-    if (g_force_iteration > 0) {
-        run_iteration = 1;
-        g_force_iteration = 0;
-    }
-
     // Give the list to the gc thread, signaling it if it's asleep.
-    forkscan_initiate_collection(ab, run_iteration);
+    forkscan_initiate_collection(ab, g_config.auto_run, force_iteration);
     forkscan_thread_cleanup_release();
 }
 
@@ -207,8 +210,7 @@ void forkscan_retire (void *ptr)
             // initiate reclamation.
 
             forkscan_thread_cleanup_try_acquire()
-                ? become_reclaimer(g_config.auto_run)
-                  // this releases the cleanup lock.
+                ? become_reclaimer() // this releases the cleanup lock.
                 : yield(n_loops);
         } while (forkscan_queue_is_full(&td->ptr_list));
         end = forkscan_rdtsc();
@@ -246,11 +248,14 @@ void forkscan_free (void *ptr)
 int forkscan_force_reclaim ()
 {
     g_force_iteration = 1;
-    if (forkscan_thread_cleanup_try_acquire()) {
-        become_reclaimer(1);
-        return 0; // Success.
-    }
-    return 1; // Failure.
+    do {
+        if (forkscan_thread_cleanup_try_acquire()) {
+            become_reclaimer(); // this releases the cleanup lock.
+            return 0; // Success.
+        }
+        yield(0);
+    } while (g_force_iteration != 0);
+    return 1; // Reclamation was already in progress.
 }
 
 /**

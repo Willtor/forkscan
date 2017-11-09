@@ -37,7 +37,7 @@ void forkscan_acknowledge_signal ();
 /**
  * Pass a list of pointers to the reclamation thread for it to collect.
  */
-void forkscan_initiate_collection (addr_buffer_t *ab, int run_iteration);
+void forkscan_initiate_collection (addr_buffer_t *ab, int auto_run, int force);
 
 /**
  * Garbage-collector thread.

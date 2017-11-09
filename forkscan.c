@@ -264,24 +264,33 @@ void forkscan_acknowledge_signal ()
 /**
  * Pass a list of pointers to the reclamation thread for it to collect.
  */
-void forkscan_initiate_collection (addr_buffer_t *ab, int run_iteration)
+void forkscan_initiate_collection (addr_buffer_t *ab, int auto_run, int force)
 {
-    // TBD: use run_iteration argument.
+    // Add the buffer into the queue.  Notify the Forkscan thread there is work
+    // waiting if we're in automatic iterations mode, or if the user initiated
+    // the collection.
     pthread_mutex_lock(&g_gc_mutex);
-    ++g_waiting_collects;
+    if (auto_run || force) ++g_waiting_collects;
     ab->next = g_addr_buffer;
     g_addr_buffer = ab;
-    if (g_gc_waiting == GC_WAITING_FOR_WORK) {
+    if (g_gc_waiting == GC_WAITING_FOR_WORK && (auto_run || force)) {
         pthread_cond_signal(&g_gc_cond);
     }
     pthread_mutex_unlock(&g_gc_mutex);
 
-    while (g_waiting_collects >= g_forkscan_throttling_queue) {
-        pthread_mutex_lock(&g_client_waiting_lock);
-        if (g_waiting_collects >= g_forkscan_throttling_queue) {
-            pthread_cond_wait(&g_client_waiting_cond, &g_client_waiting_lock);
+    if (auto_run > 0) {
+        // Only throttle if we are in automatic mode - in which case Forkscan
+        // provides memory limit guarantees.  If the user is manually
+        // controlling reclamation iterations, all memory guarantees are out
+        // the window.
+        while (g_waiting_collects >= g_forkscan_throttling_queue) {
+            pthread_mutex_lock(&g_client_waiting_lock);
+            if (g_waiting_collects >= g_forkscan_throttling_queue) {
+                pthread_cond_wait(&g_client_waiting_cond,
+                                  &g_client_waiting_lock);
+            }
+            pthread_mutex_unlock(&g_client_waiting_lock);
         }
-        pthread_mutex_unlock(&g_client_waiting_lock);
     }
 }
 
@@ -294,7 +303,7 @@ void *forkscan_thread (void *ignored)
 
     while ((1)) {
         pthread_mutex_lock(&g_gc_mutex);
-        if (NULL == g_addr_buffer) {
+        if (g_waiting_collects < 1) {
             // Wait for somebody to come up with a set of addresses for us to
             // collect.
             g_gc_waiting = GC_WAITING_FOR_WORK;
