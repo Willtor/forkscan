@@ -62,7 +62,7 @@ decl forkscan_set_auto_run (auto_run i32) -> void;
  * will be tracked by the garbage collector, so free() should never be called
  * on it.
  */
-decl forkscan_automalloc (u64 size) -> *void;
+decl forkscan_automalloc (size u64) -> *void;
 
 /**
  * Set the allocator for Forkscan to use: malloc, free, malloc_usable_size.
