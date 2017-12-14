@@ -45,7 +45,13 @@ $(INSTALL_DIR)/lib/$(FORKSCAN): $(FORKSCAN)
 $(INSTALL_DIR)/include/forkscan.h: include/forkscan.h
 	cp $< $@
 
-install: $(INSTALL_DIR)/lib/$(FORKSCAN) $(INSTALL_DIR)/include/forkscan.h
+$(INSTALL_DIR)/lib/def:
+	mkdir -p $@
+
+$(INSTALL_DIR)/lib/def/forkscan.defi: include/forkscan.defi $(INSTALL_DIR)/lib/def
+	cp $< $@
+
+install: $(INSTALL_DIR)/lib/$(FORKSCAN) $(INSTALL_DIR)/include/forkscan.h $(INSTALL_DIR)/lib/def/forkscan.defi
 	ldconfig
 
 clean:
