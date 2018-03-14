@@ -70,3 +70,15 @@ decl forkscan_automalloc (size u64) -> *void;
 decl forkscan_set_allocator (alloc (u64) -> *void,
                              dealloc (*void) -> void,
                              usable_size (*void) -> u64) -> void;
+
+/**
+ * Robust sleep with whole-second intervals.  This won't exit when there's
+ * an interrupt, as commonly occurs in Forkscan.
+ */
+decl forkscan_sleep (seconds u32) -> void;
+
+/**
+ * Robust sleep with microsecond intervals.  This won't exit when there's
+ * an interrupt, as commonly occurs in Forkscan.
+ */
+decl forkscan_usleep (usec u64) -> void;

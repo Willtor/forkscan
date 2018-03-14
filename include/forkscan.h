@@ -81,6 +81,19 @@ extern void forkscan_set_allocator (void *(*alloc) (size_t),
                                     void (*dealloc) (void *),
                                     size_t (*usable_size) (void *));
 
+
+/**
+ * Robust sleep with whole-second intervals.  This won't exit when there's
+ * an interrupt, as commonly occurs in Forkscan.
+ */
+extern void forkscan_sleep (unsigned int seconds);
+
+/**
+ * Robust sleep with microsecond intervals.  This won't exit when there's
+ * an interrupt, as commonly occurs in Forkscan.
+ */
+extern void forkscan_usleep (unsigned long long usec);
+
 #ifdef __cplusplus
 }
 #endif

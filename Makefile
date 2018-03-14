@@ -17,7 +17,8 @@ FORKSCAN_SRC =		\
 	proc.c		\
 	forkscan.c	\
 	child.c		\
-	frontend.c
+	frontend.c	\
+	sleep.c
 
 FORKSCAN_OBJ = $(FORKSCAN_SRC:.c=.o)
 
