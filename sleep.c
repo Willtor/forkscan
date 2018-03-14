@@ -22,6 +22,7 @@ THE SOFTWARE.
 
 #include <time.h>
 #include <unistd.h>
+#include <stdio.h>
 
 /**
  * Robust sleep with microsecond intervals.  This won't exit when there's
@@ -35,7 +36,7 @@ void forkscan_usleep (unsigned long long usec)
 
     current_us = (ts.tv_sec * 1000 * 1000) + (ts.tv_nsec / 1000);
     begin_us = current_us;
-    end_us = begin_us + (usec * 1000 * 1000);
+    end_us = begin_us + usec;
 
     while (current_us < end_us) {
         usleep(end_us - current_us);
