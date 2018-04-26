@@ -41,7 +41,6 @@ THE SOFTWARE.
 #define LOOKASIDE_SZ 0x4000
 #define BINARY_THRESHOLD 32
 #define MAX_RANGE_SIZE (8 * 1024 * 1024)
-#define MAX_CHILDREN 16
 #define MEMORY_THRESHOLD (1024 * 1024 * 16)
 
 typedef struct trace_stats_t trace_stats_t;
@@ -482,6 +481,8 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
         if (fork() == 0) break;
     }
 
+    ab->sibling_pids[sibling_id] = getpid();
+
 #ifdef TIMING
     size_t start, end;
     start = forkscan_rdtsc();
@@ -497,6 +498,8 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
         // up the work evenly, or some will sit around waiting while there's
         // work to be done.
 
+        // FIXME: WORKING HERE.  One of the final siblings is crashing.
+        // Did memory get deallocated when the parent process shutdown?
         find_roots(g_ranges[i].low, g_ranges[i].high, ab, deadrefs);
         total_memory += g_ranges[i].high - g_ranges[i].low;
     }
@@ -556,9 +559,34 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
                 ab->more_marking_tbd = 0;
             }
             ab->completed_children = 0;
+            __sync_synchronize();
             __sync_fetch_and_add(&ab->round, 1);
         } else {
-            while (round == ab->round) pthread_yield();
+            size_t waiting_begin = forkscan_rdtsc();
+            while (round == ab->round) {
+                pthread_yield();
+                size_t waiting_end = forkscan_rdtsc();
+                if (waiting_end - waiting_begin > 500) {
+                    // We've been waiting for half a second.  Time to check
+                    // to see if any of the siblings have died.
+                    for (i = 0; i < n_siblings; ++i) {
+                        if (i != sibling_id) {
+                            if (0 != kill(ab->sibling_pids[i], 0)) {
+                                // A sibling died.  This will happen if the
+                                // parent died (sometimes).  There's nothing
+                                // to be done, but quietly die ourselves.
+                                //
+                                // Alone.
+                                //
+                                // Unloved.
+                                exit(0);
+                            }
+                        }
+                    }
+                    // Welp.  Guess somebody is just taking a long time.
+                    waiting_begin = forkscan_rdtsc();
+                }
+            }
         }
     }
 
