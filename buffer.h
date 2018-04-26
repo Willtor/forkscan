@@ -39,9 +39,9 @@ struct addr_buffer_t {
     int n_minimap;
     int capacity;
     int cutoff_reached;
-    sibling_mode_t sibling_mode;
-    int completed_children;
-    int more_marking_tbd;
+    volatile sibling_mode_t sibling_mode;
+    volatile int completed_children;
+    volatile int more_marking_tbd;
     volatile int round; // Trust we won't need more than 2 billion rounds.
 
     // After marking has been done, these fields are used by threads that
