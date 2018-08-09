@@ -172,8 +172,6 @@ void *forkscan_malloc (size_t size)
     g_in_malloc = 1;
     p = MALLOC(size);
 
-    // Free a couple pointers, if we have them.
-    forkscan_util_free_ptrs(forkscan_thread_get_td());
     g_in_malloc = 0;
 
     if (g_waiting_to_fork) {
@@ -199,6 +197,8 @@ void forkscan_retire (void *ptr)
     }
 
     thread_data_t *td = forkscan_thread_get_td();
+    // Free a couple pointers, if we have them.
+    forkscan_util_free_ptrs(td);
     forkscan_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
     if (forkscan_queue_is_full(&td->ptr_list)) {
         size_t start, end;
