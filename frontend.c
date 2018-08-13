@@ -200,6 +200,10 @@ void forkscan_retire (void *ptr)
     g_in_malloc = 1;
     forkscan_util_free_ptrs(td);
     g_in_malloc = 0;
+    if (g_waiting_to_fork) {
+        g_waiting_to_fork = 0;
+        forkscan_acknowledge_signal();
+    }
     forkscan_queue_push(&td->ptr_list, (size_t)ptr); // Add the pointer.
     if (forkscan_queue_is_full(&td->ptr_list)) {
         size_t start, end;
