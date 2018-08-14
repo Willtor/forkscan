@@ -24,6 +24,7 @@ THE SOFTWARE.
 #include <assert.h>
 #include "alloc.h"
 #include "child.h"
+#include <errno.h>
 #include <malloc.h>
 #include "proc.h"
 #include <pthread.h>
@@ -464,6 +465,7 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     add_stack_ranges();
     ab->completed_children = 0;
     ab->cutoff_reached = 0;
+    ab->round = 0;
 
     trace_stats_t ts;
     ts.min = PTR_MASK(ab->addrs[0]);
@@ -480,6 +482,7 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     for (sibling_id = 0; sibling_id < n_siblings - 1; ++sibling_id) {
         if (fork() == 0) break;
     }
+    pid_t daddy = getppid();
 
     ab->sibling_pids[sibling_id] = getpid();
 
@@ -519,6 +522,29 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     start = end;
 #endif
 
+    // Wait until finding roots has completed for all of the siblings before
+    // searching marked nodes.
+    int round = ab->round;
+    if (n_siblings - 1 == __sync_fetch_and_add(&ab->completed_children, 1)) {
+        ab->completed_children = 0;
+        __sync_synchronize();
+        __sync_fetch_and_add(&ab->round, 1);
+    } else {
+        size_t waiting_begin = forkscan_rdtsc();
+        while (round == ab->round) {
+            pthread_yield();
+            size_t waiting_end = forkscan_rdtsc();
+            if (waiting_end - waiting_begin > 250) {
+                if (daddy != getppid()) {
+                    // init is my dad, now.  Time for bed, son.
+                    exit(0);
+                }
+                // Nope, still live.
+                waiting_begin = forkscan_rdtsc();
+            }
+        }
+    }
+
     // Now, break up the pool into chunks for each process to handle, BFS-
     // style.
     int addrs_range_size, addrs_start, addrs_end;
@@ -527,7 +553,7 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     addrs_end = sibling_id == n_siblings - 1 ?
         ab->n_addrs : (sibling_id + 1) * addrs_range_size;
     while (ab->sibling_mode != SIBLING_MODE_DONE) {
-        int round = ab->round;
+        round = ab->round;
 
         // Run through this process's chunk looking for things to mark.
         for (i = addrs_start; i < addrs_end; ++i) {
@@ -571,7 +597,7 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
                     // to see if any of the siblings have died.
                     for (i = 0; i < n_siblings; ++i) {
                         if (i != sibling_id) {
-                            if (0 != kill(ab->sibling_pids[i], 0)) {
+                            if (-1 == kill(ab->sibling_pids[i], 0)) {
                                 // A sibling died.  This will happen if the
                                 // parent died (sometimes).  There's nothing
                                 // to be done, but quietly die ourselves.
