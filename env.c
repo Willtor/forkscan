@@ -20,6 +20,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+#include "buffer.h"
 #include "env.h"
 #include <stdlib.h>
 #include "util.h"
@@ -36,6 +37,8 @@ static const char env_report_statistics[] = "FORKSCAN_REPORT_STATS";
 
 static const char env_throttling_queue[] = "FORKSCAN_THROTTLING_QUEUE";
 
+static const char env_max_children[] = "FORKSCAN_MAX_CHILDREN";
+
 // # of ptrs a thread can "save up" before initiating a collection run.
 // The number of pointers per thread should be a power of 2 because we use
 // this number to do masking (to avoid the costly modulo operation).
@@ -46,6 +49,9 @@ int g_forkscan_report_statistics;
 
 // How many collects can queue up before user threads get throttled.
 int g_forkscan_throttling_queue;
+
+// Maximum number of children to fork to participate in a scan of memory.
+int g_forkscan_max_children;
 
 /** Parse an integer from a string.  0 if val is NULL.
  */
@@ -116,5 +122,18 @@ static void env_init ()
             throttling_queue = MAX_THROTTLING_QUEUE;
         }
         g_forkscan_throttling_queue = throttling_queue;
+    }
+
+    {
+        int max_children;
+        max_children = get_int(getenv(env_max_children),
+                               MAX_CHILDREN);
+        if (max_children <= 0) {
+            max_children = 1;
+        }
+        if (max_children > MAX_CHILDREN) {
+            max_children = MAX_CHILDREN;
+        }
+        g_forkscan_max_children = max_children;
     }
 }

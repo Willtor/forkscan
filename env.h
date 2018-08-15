@@ -36,4 +36,7 @@ extern int g_forkscan_report_statistics;
 // How many collects can queue up before user threads get throttled.
 extern int g_forkscan_throttling_queue;
 
+// Maximum number of children to fork to participate in a scan of memory.
+extern int g_forkscan_max_children;
+
 #endif // !defined _ENV_H_

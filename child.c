@@ -24,6 +24,7 @@ THE SOFTWARE.
 #include <assert.h>
 #include "alloc.h"
 #include "child.h"
+#include "env.h"
 #include <errno.h>
 #include <malloc.h>
 #include "proc.h"
@@ -471,7 +472,7 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     ts.min = PTR_MASK(ab->addrs[0]);
     ts.max = PTR_MASK(ab->addrs[ab->n_addrs - 1]);
 
-    int n_siblings = MIN_OF(MAX_CHILDREN,
+    int n_siblings = MIN_OF(g_forkscan_max_children,
                             g_bytes_to_scan / MEMORY_THRESHOLD);
     n_siblings = MIN_OF(n_siblings, g_n_ranges);
     n_siblings = MAX_OF(n_siblings, 1);
