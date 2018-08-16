@@ -47,6 +47,8 @@ struct addr_buffer_t {
     volatile int completed_children;
     volatile int more_marking_tbd;
     volatile int round; // Trust we won't need more than 2 billion rounds.
+    volatile int root_counter;
+    volatile int roots_completed;
 
     // After marking has been done, these fields are used by threads that
     // want to free the unreferenced nodes.

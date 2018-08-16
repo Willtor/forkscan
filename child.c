@@ -478,6 +478,8 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     n_siblings = MAX_OF(n_siblings, 1);
 
     ab->sibling_mode = SIBLING_MODE_MARKING;
+    ab->root_counter = 0;
+    ab->roots_completed = 0;
 
     int sibling_id = 0;
     for (sibling_id = 0; sibling_id < n_siblings - 1; ++sibling_id) {
@@ -493,25 +495,25 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
 #endif
 
     // Scan this child's ranges of memory, looking for roots into our pool.
-    int i;
+    int rid;
     size_t total_memory = 0;
-    for (i = sibling_id; i < g_n_ranges; i += n_siblings) {
-        // Stride memory in this for-loop.  Many chunks will have few or no
-        // references and get scanned quickly.  Others have lots of refs and
-        // are much slower.  It's important that the fork'd siblings break
-        // up the work evenly, or some will sit around waiting while there's
-        // work to be done.
-
-        // FIXME: WORKING HERE.  One of the final siblings is crashing.
-        // Did memory get deallocated when the parent process shutdown?
-        find_roots(g_ranges[i].low, g_ranges[i].high, ab, deadrefs);
-        total_memory += g_ranges[i].high - g_ranges[i].low;
+    int roots_completed = 0;
+    while ((rid = __sync_fetch_and_add(&ab->root_counter, 1)) < g_n_ranges) {
+        // Okay, so this looks bad.  Contention on ab->root_counter?  Well,
+        // there really aren't that many processes and there's a lot of work
+        // to be done in root finding.
+        //
+        // Will's judgment: This is okay.
+        find_roots(g_ranges[rid].low, g_ranges[rid].high, ab, deadrefs);
+        total_memory += g_ranges[rid].high - g_ranges[rid].low;
+        ++roots_completed;
     }
 
     if (g_lookaside_count > 0) {
         // Catch any remainders.
         lookup_lookaside_list(ab);
     }
+    __sync_fetch_and_add(&ab->roots_completed, roots_completed);
 
 #ifdef TIMING
     end = forkscan_rdtsc();
@@ -525,24 +527,17 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
 
     // Wait until finding roots has completed for all of the siblings before
     // searching marked nodes.
-    int round = ab->round;
-    if (n_siblings - 1 == __sync_fetch_and_add(&ab->completed_children, 1)) {
-        ab->completed_children = 0;
-        __sync_synchronize();
-        __sync_fetch_and_add(&ab->round, 1);
-    } else {
-        size_t waiting_begin = forkscan_rdtsc();
-        while (round == ab->round) {
-            pthread_yield();
-            size_t waiting_end = forkscan_rdtsc();
-            if (waiting_end - waiting_begin > 250) {
-                if (daddy != getppid()) {
-                    // init is my dad, now.  Time for bed, son.
-                    exit(0);
-                }
-                // Nope, still live.
-                waiting_begin = forkscan_rdtsc();
+    size_t waiting_begin = forkscan_rdtsc();
+    while (ab->roots_completed < g_n_ranges) {
+        pthread_yield();
+        size_t waiting_end = forkscan_rdtsc();
+        if (waiting_end - waiting_begin > 250) {
+            if (daddy != getppid()) {
+                // init is my dad, now.  Time for bed, son.
+                exit(0);
             }
+            // Nope, still live.
+            waiting_begin = forkscan_rdtsc();
         }
     }
 
@@ -554,9 +549,10 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     addrs_end = sibling_id == n_siblings - 1 ?
         ab->n_addrs : (sibling_id + 1) * addrs_range_size;
     while (ab->sibling_mode != SIBLING_MODE_DONE) {
-        round = ab->round;
+        int round = ab->round;
 
         // Run through this process's chunk looking for things to mark.
+        int i;
         for (i = addrs_start; i < addrs_end; ++i) {
             size_t addr = ab->addrs[i];
             if ((addr & 0x3) == 0x1) {
