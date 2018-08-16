@@ -460,6 +460,8 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     assert(ab);
     assert(deadrefs);
 
+    pid_t daddy = getppid();
+
     // Scan memory for references.
     g_bytes_to_scan = 0;
     forkscan_proc_map_iterate(collect_ranges, NULL);
@@ -485,9 +487,6 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     for (sibling_id = 0; sibling_id < n_siblings - 1; ++sibling_id) {
         if (fork() == 0) break;
     }
-    pid_t daddy = getppid();
-
-    ab->sibling_pids[sibling_id] = getpid();
 
 #ifdef TIMING
     size_t start, end;
@@ -591,20 +590,16 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
                 size_t waiting_end = forkscan_rdtsc();
                 if (waiting_end - waiting_begin > 500) {
                     // We've been waiting for half a second.  Time to check
-                    // to see if any of the siblings have died.
-                    for (i = 0; i < n_siblings; ++i) {
-                        if (i != sibling_id) {
-                            if (-1 == kill(ab->sibling_pids[i], 0)) {
-                                // A sibling died.  This will happen if the
-                                // parent died (sometimes).  There's nothing
-                                // to be done, but quietly die ourselves.
-                                //
-                                // Alone.
-                                //
-                                // Unloved.
-                                exit(0);
-                            }
-                        }
+                    // to see if the parent died.
+                    if (-1 == kill(daddy, 0)) {
+                        // Parent died.  And it didn't take the kids
+                        // with it for some reason.  There's nothing
+                        // to be done, but quietly die ourselves.
+                        //
+                        // Alone.
+                        //
+                        // Unloved.
+                        exit(0);
                     }
                     // Welp.  Guess somebody is just taking a long time.
                     waiting_begin = forkscan_rdtsc();

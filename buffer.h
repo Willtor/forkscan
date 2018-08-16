@@ -54,9 +54,6 @@ struct addr_buffer_t {
     // want to free the unreferenced nodes.
     volatile int ref_count;
     volatile int free_idx;
-
-    // Array of process ids for sibling processes.
-    pid_t sibling_pids[MAX_CHILDREN];
 };
 
 addr_buffer_t *forkscan_make_reclaimer_buffer ();
