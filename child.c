@@ -461,6 +461,7 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     assert(deadrefs);
 
     pid_t daddy = getppid();
+    pid_t eldest = getpid();
 
     // Scan memory for references.
     g_bytes_to_scan = 0;
@@ -531,7 +532,10 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
         pthread_yield();
         size_t waiting_end = forkscan_rdtsc();
         if (waiting_end - waiting_begin > 250) {
-            if (daddy != getppid()) {
+            pid_t parent = getppid();
+            pid_t me = getpid();
+            if ((eldest == me && daddy != parent)
+                || (eldest != me && eldest != parent)) {
                 // init is my dad, now.  Time for bed, son.
                 exit(0);
             }
