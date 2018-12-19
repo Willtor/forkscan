@@ -142,15 +142,13 @@ static int addr_find_hint (size_t val, addr_buffer_t *ab, int hint)
     return addr_find(val, ab);
 }
 
-static inline int recursive_mark (size_t addr,
-                                  addr_buffer_t *ab,
-                                  trace_stats_t *ts,
-                                  int depth)
+static inline void recursive_mark (size_t addr,
+                                   addr_buffer_t *ab,
+                                   trace_stats_t *ts)
 {
     size_t *ptr = (size_t*)PTR_MASK(addr);
     size_t n_vals = MALLOC_USABLE_SIZE(ptr) / sizeof(size_t);
     size_t i;
-    int ret = 0;
 
     for (i = 0; i < n_vals; ++i) {
         size_t val = PTR_MASK(ptr[i]);
@@ -159,35 +157,21 @@ static inline int recursive_mark (size_t addr,
         if (is_ref(ab, loc, val)) {
             // Found a hit inside our pool.
             size_t target = ab->addrs[loc];
-            if (target & 0x2) {
+            if (target & 0x1) {
                 // Already recursively searched.
                 continue;
             }
 
-            if (target & 0x3 && depth < 1) {
-                // Already marked and we can't go any deeper.
-                continue;
-            }
-
-            if (depth < 1) {
-                // Not marked, but we can't go any deeper.  Mark it and
-                // continue.
-                BCAS(&ab->addrs[loc], target, target | 0x1);
-                ret = 1;
-                continue;
-            }
-
-            if (BCAS(&ab->addrs[loc], target, target | 0x3)) {
-                // We will do a recursive search.
-                ret |= recursive_mark(PTR_MASK(addr), ab, ts, depth - 1);
-            }
+            // Technically a race condition, but anybody racing with us is
+            // trying to write the same value:
+            ab->addrs[loc] = target | 0x1;
+            recursive_mark(PTR_MASK(addr), ab, ts);
         }
     }
-
-    return ret;
 }
 
-static void lookup_lookaside_list (addr_buffer_t *ab)
+static void lookup_lookaside_list (addr_buffer_t *ab,
+                                   trace_stats_t *ts)
 {
     int i;
     size_t cmp = 0;
@@ -222,6 +206,7 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
                 // No need to be atomic.  Any processes racing with us are
                 // trying to write the same value.
                 ab->addrs[loc] = addr | 0x1;
+                recursive_mark(addr, ab, ts);
             }
         }
 #ifndef NDEBUG
@@ -248,8 +233,10 @@ static void lookup_lookaside_list (addr_buffer_t *ab)
  * will later be used as a basis for determining reachability of the rest of
  * the nodes.
  */
-static void find_roots (size_t low, size_t high,
-                        addr_buffer_t *ab, addr_buffer_t *deadrefs)
+static void find_roots (size_t low,
+                        size_t high,
+                        addr_buffer_t *ab,
+                        addr_buffer_t *deadrefs)
 {
     int pool_idx, dead_idx = 0;
     size_t pool_addr, dead_addr;
@@ -314,7 +301,7 @@ static void find_roots (size_t low, size_t high,
             if (g_lookaside_count < LOOKASIDE_SZ) continue;
 
             // The lookaside list is full.
-            lookup_lookaside_list(ab);
+            lookup_lookaside_list(ab, &ts);
         }
 
         assert(low == next_stopping_point);
@@ -460,9 +447,6 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     assert(ab);
     assert(deadrefs);
 
-    pid_t daddy = getppid();
-    pid_t eldest = getpid();
-
     // Scan memory for references.
     g_bytes_to_scan = 0;
     forkscan_proc_map_iterate(collect_ranges, NULL);
@@ -470,10 +454,6 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     ab->completed_children = 0;
     ab->cutoff_reached = 0;
     ab->round = 0;
-
-    trace_stats_t ts;
-    ts.min = PTR_MASK(ab->addrs[0]);
-    ts.max = PTR_MASK(ab->addrs[ab->n_addrs - 1]);
 
     int n_siblings = MIN_OF(g_forkscan_max_children,
                             g_bytes_to_scan / MEMORY_THRESHOLD);
@@ -483,6 +463,10 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     ab->sibling_mode = SIBLING_MODE_MARKING;
     ab->root_counter = 0;
     ab->roots_completed = 0;
+
+    trace_stats_t ts;
+    ts.min = PTR_MASK(ab->addrs[0]);
+    ts.max = PTR_MASK(ab->addrs[ab->n_addrs - 1]);
 
     int sibling_id = 0;
     for (sibling_id = 0; sibling_id < n_siblings - 1; ++sibling_id) {
@@ -511,9 +495,12 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
 
     if (g_lookaside_count > 0) {
         // Catch any remainders.
-        lookup_lookaside_list(ab);
+        lookup_lookaside_list(ab, &ts);
     }
-    __sync_fetch_and_add(&ab->roots_completed, roots_completed);
+
+    int total_roots =
+        __sync_fetch_and_add(&ab->roots_completed, roots_completed)
+        + roots_completed;
 
 #ifdef TIMING
     end = forkscan_rdtsc();
@@ -525,103 +512,9 @@ void forkscan_child (addr_buffer_t *ab, addr_buffer_t *deadrefs, int fd)
     start = end;
 #endif
 
-    // Wait until finding roots has completed for all of the siblings before
-    // searching marked nodes.
-    size_t waiting_begin = forkscan_rdtsc();
-    while (ab->roots_completed < g_n_ranges) {
-        pthread_yield();
-        size_t waiting_end = forkscan_rdtsc();
-        if (waiting_end - waiting_begin > 250) {
-            pid_t parent = getppid();
-            pid_t me = getpid();
-            if ((eldest == me && daddy != parent)
-                || (eldest != me && eldest != parent)) {
-                // init is my dad, now.  Time for bed, son.
-                exit(0);
-            }
-            // Nope, still live.
-            waiting_begin = forkscan_rdtsc();
-        }
-    }
-
-    // Now, break up the pool into chunks for each process to handle, BFS-
-    // style.
-    int addrs_range_size, addrs_start, addrs_end;
-    addrs_range_size = ab->n_addrs / n_siblings;
-    addrs_start = sibling_id * addrs_range_size;
-    addrs_end = sibling_id == n_siblings - 1 ?
-        ab->n_addrs : (sibling_id + 1) * addrs_range_size;
-    while (ab->sibling_mode != SIBLING_MODE_DONE) {
-        int round = ab->round;
-
-        // Run through this process's chunk looking for things to mark.
-        int i;
-        for (i = addrs_start; i < addrs_end; ++i) {
-            size_t addr = ab->addrs[i];
-            if ((addr & 0x3) == 0x1) {
-                // Node that has been marked but not recursively searched.
-                if (BCAS(&ab->addrs[i], addr, addr | 0x2)) {
-                    if (recursive_mark(addr, ab, &ts, 1)) {
-                        // Other nodes were found and marked during this round.
-                        // There will need to be another round.
-                        if (0 == ab->more_marking_tbd) {
-                            ab->more_marking_tbd = 1;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (n_siblings - 1
-            == __sync_fetch_and_add(&ab->completed_children, 1)) {
-
-            // Last one done with this round.  Check to see if anything more
-            // needs to be done.
-
-            if (!ab->more_marking_tbd) {
-                // Nobody marked anything.  All done.
-                ab->sibling_mode = SIBLING_MODE_DONE;
-            } else {
-                ab->more_marking_tbd = 0;
-            }
-            ab->completed_children = 0;
-            __sync_synchronize();
-            __sync_fetch_and_add(&ab->round, 1);
-        } else {
-            size_t waiting_begin = forkscan_rdtsc();
-            while (round == ab->round) {
-                pthread_yield();
-                size_t waiting_end = forkscan_rdtsc();
-                if (waiting_end - waiting_begin > 500) {
-                    // We've been waiting for half a second.  Time to check
-                    // to see if the parent died.
-                    if (-1 == kill(daddy, 0)) {
-                        // Parent died.  And it didn't take the kids
-                        // with it for some reason.  There's nothing
-                        // to be done, but quietly die ourselves.
-                        //
-                        // Alone.
-                        //
-                        // Unloved.
-                        exit(0);
-                    }
-                    // Welp.  Guess somebody is just taking a long time.
-                    waiting_begin = forkscan_rdtsc();
-                }
-            }
-        }
-    }
-
-#ifdef TIMING
-    end = forkscan_rdtsc();
-    fprintf(stderr, "  chunk time: %zu ms in %d rounds.\n", end - start,
-            ab->round);
-#endif
-
-    if (n_siblings - 1
-        == __sync_fetch_and_add(&ab->completed_children, 1)) {
-
-        // Alert the uber parent.
+    if (total_roots == g_n_ranges) {
+        // This child completed the final range.  It gets to notify the parent
+        // that scanning is complete.
         if (sizeof(size_t) != write(fd, &g_bytes_to_scan, sizeof(size_t))) {
             forkscan_fatal("Failed to write to parent.\n");
         }
